@@ -1,6 +1,26 @@
 {
   "plugins": [
     {
+      "id": "demo",
+      "name": "演示插件",
+      "description": "CI 自动同步索引的端到端测试插件（测试后即移除）",
+      "author": "jeanhua",
+      "version": "1.0.0",
+      "platforms": [
+        "qq"
+      ],
+      "tags": [
+        "测试"
+      ],
+      "api_version": 1,
+      "min_framework": "4.6.0",
+      "entry": {
+        "constructor": "NewPlugin"
+      },
+      "icon": "",
+      "readme": "README.md"
+    },
+    {
       "id": "example",
       "name": "示例插件",
       "description": "插件开发入门示例：at 机器人发送 /example 回复问候语",
