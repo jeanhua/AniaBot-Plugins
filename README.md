@@ -16,7 +16,7 @@ docs/
   plugin-spec.md  # plugin.json 规范
 scripts/
   validate.sh     # 本地校验脚本（与 CI 一致）
-index.json        # 聚合索引（由 scripts/build-index.sh 生成，勿手改）
+index.json        # 聚合索引（由 scripts/build-index.sh 生成，CI 在合并到 main 后自动同步，无需手改）
 ```
 
 ## 插件列表

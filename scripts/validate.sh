@@ -62,8 +62,12 @@ fi
 echo "== 4. 检查 index.json 是否已提交（git 仓库中执行）=="
 if [ -d "$ROOT/.git" ]; then
   if ! (cd "$ROOT" && git diff --quiet -- index.json); then
-    echo "index.json 与插件不一致，请运行 bash scripts/build-index.sh 后提交变更"
-    exit 1
+    if [ "${ALLOW_INDEX_DIFF:-0}" = "1" ]; then
+      echo "提示：index.json 有差异，无需手动处理——合并到 main 后 CI 会自动重新生成并提交"
+    else
+      echo "index.json 与插件不一致，请运行 bash scripts/build-index.sh 后提交变更"
+      exit 1
+    fi
   fi
 fi
 echo "校验通过"
