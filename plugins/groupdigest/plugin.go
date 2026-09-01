@@ -85,7 +85,7 @@ func NewPlugin() *GroupDigestPlugin {
 	p.AdminOnly = false
 	p.ShowFor = plugininfo.ShowForGroup
 	p.Author = "jeanhua"
-	p.Version = "1.3.0"
+	p.Version = "1.3.1"
 	p.Order = plugin.LevelNormal
 	return p
 }
@@ -186,8 +186,9 @@ func (p *GroupDigestPlugin) OnGroupMsg(ctx context.Context, b bot.Bot, cmd comma
 }
 
 // OnFriendMsg 私聊消息事件：仅支持管理员查看全部作用群状态（/digest all 或 /群刊全部）。
+// 私聊无需 @ 机器人，直接发送斜杠命令即可（各平台私聊通常无法/不需要艾特）。
 func (p *GroupDigestPlugin) OnFriendMsg(ctx context.Context, b bot.Bot, cmd command.Command, msg message.Message) (bool, error) {
-	if !p.cfg.Enable || !cmd.Mention {
+	if !p.cfg.Enable {
 		return true, nil
 	}
 	if cmd.Name == cmdAllFull || cmd.Name == cmdDigest || cmd.Name == cmdDigestCN {
