@@ -18,6 +18,9 @@
       ],
       "api_version": 1,
       "min_framework": "4.6.0",
+      "entry": {
+        "constructor": "NewPlugin"
+      },
       "readme": "README.md",
       "icon": ""
     }
