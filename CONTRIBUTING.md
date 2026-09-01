@@ -32,6 +32,13 @@
 - 平台能力用类型断言探测（如 `bot.QQ`），写 QQ 专属功能时在 `plugin.json` 的 `platforms` 里声明 `["qq"]`
 - 插件代码与框架 API 绑定编译期版本：编译不过就装不上，升级 AniaBot 后如 API 变化需要同步更新插件
 
+## 相关文档
+
+- [AniaBot 插件系统概览](https://jeanhua.github.io/AniaBot/plugin/overview) —— 插件如何被加载与执行
+- [第一个插件](https://jeanhua.github.io/AniaBot/plugin/first-plugin) / [完整教程](https://jeanhua.github.io/AniaBot/plugin/tutorial) —— 从零开发插件
+- [插件规范（本仓库）](docs/plugin-spec.md) —— plugin.json 元信息规范
+- [AniaBot 文档站点](https://jeanhua.github.io/AniaBot/) —— 全部文档
+
 ## 版本与兼容
 
 - `plugin.json` 的 `version` 为插件版本；每次功能变更建议递增

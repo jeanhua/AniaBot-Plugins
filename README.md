@@ -50,6 +50,20 @@ go run ./tools/plugingen
 go run cmd/main.go
 ```
 
+## 相关链接
+
+| 链接 | 说明 |
+| --- | --- |
+| [AniaBot 框架仓库](https://github.com/jeanhua/AniaBot) | AniaBot 主仓库（框架代码、插件市场功能） |
+| [AniaBot 文档站点](https://jeanhua.github.io/AniaBot/) | AniaBot 完整文档 |
+| [插件系统概览](https://jeanhua.github.io/AniaBot/plugin/overview) | 插件开发入门：插件如何加载与执行 |
+| [第一个插件](https://jeanhua.github.io/AniaBot/plugin/first-plugin) | 从零开发第一个插件 |
+| [插件开发教程](https://jeanhua.github.io/AniaBot/plugin/tutorial) | 完整插件开发实战 |
+| [插件市场使用指南](https://jeanhua.github.io/AniaBot/guide/plugin-marketplace) | 面板在线安装 / 升级 / 卸载插件 |
+| [插件规范（本仓库）](docs/plugin-spec.md) | plugin.json 元信息规范 |
+
+开发插件前，建议先阅读 AniaBot 的[插件开发文档](https://jeanhua.github.io/AniaBot/plugin/overview)，了解 `plugin.Meta`、消息事件、`msgchain` 消息构造器等基础 API，再参考本仓库的 [example](plugins/example) 示例。
+
 ## 安全与信任模型
 
 **安装插件 = 在 Bot 所在机器上执行插件代码（与 Bot 同进程）**。请只安装你信任的插件。本仓库所有插件都经过维护者人工审查（重点：网络请求、文件读写、进程执行、凭据访问、第三方依赖），但无法保证第三方依赖与未来版本绝对安全。面板安装时会再次提示风险，默认情况下插件市场功能是关闭的。

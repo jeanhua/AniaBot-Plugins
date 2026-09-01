@@ -1,5 +1,7 @@
 # plugin.json 规范
 
+> 开发插件前建议先阅读 AniaBot 的[插件系统概览](https://jeanhua.github.io/AniaBot/plugin/overview)与[第一个插件](https://jeanhua.github.io/AniaBot/plugin/first-plugin)；本文档只规定市场插件的元信息（plugin.json）格式。
+
 每个插件目录 `plugins/<id>/` 必须包含 `plugin.json`、`README.md` 与 Go 源码。
 
 ## 目录与 ID 约束
