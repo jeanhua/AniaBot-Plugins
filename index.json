@@ -21,8 +21,8 @@
       "entry": {
         "constructor": "NewPlugin"
       },
-      "readme": "README.md",
-      "icon": ""
+      "icon": "",
+      "readme": "README.md"
     }
   ]
 }
