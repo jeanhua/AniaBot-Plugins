@@ -11,17 +11,6 @@ if [ ! -e "${manifests[0]}" ]; then
   exit 0
 fi
 
-jq -s '{plugins: map({
-  id: .id,
-  name: .name,
-  description: .description,
-  author: .author,
-  version: .version,
-  platforms: (.platforms // []),
-  tags: (.tags // []),
-  api_version: (.api_version // 1),
-  min_framework: (.min_framework // ""),
-  readme: (.readme // "README.md"),
-  icon: (.icon // "")
-})}' "${manifests[@]}" > "$OUT"
+# 保留完整字段，仅补 readme/icon 默认值
+jq -s '{plugins: map(. + {readme: (.readme // "README.md"), icon: (.icon // "")})}' "${manifests[@]}" > "$OUT"
 echo "index.json 已生成：$(jq '.plugins | length' "$OUT") 个插件"
