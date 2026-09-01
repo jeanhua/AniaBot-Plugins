@@ -45,11 +45,8 @@ func (p *GroupDigestPlugin) generateDigest(ctx context.Context, b bot.Bot, gid m
 	if err := p.chat.ClearHistory(ctx); err != nil {
 		return "", fmt.Errorf("重置 AI 会话失败: %w", err)
 	}
+	// 只传空参数：不设输出上限与采样参数，跟随模型 API 默认
 	opts := aichat.ChatOptions{}
-	if p.maxToken > 0 {
-		v := p.maxToken
-		opts.MaxToken = &v
-	}
 	resp, _, err := p.chat.Chat(ctx, sb.String(), llmtool.CallBackFuncs{}, opts)
 	if err != nil {
 		return "", fmt.Errorf("AI 生成群刊失败: %w", err)

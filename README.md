@@ -24,7 +24,7 @@ index.json        # 聚合索引（由 scripts/build-index.sh 生成，CI 在合
 | ID | 名称 | 作者 | 版本 | 说明 |
 | --- | --- | --- | --- | --- |
 | [example](plugins/example) | 示例插件 | AniaBot | 1.0.0 | 插件开发入门示例 |
-| [groupdigest](plugins/groupdigest) | 群刊 | jeanhua | 1.1.0 | 群消息达到阈值后自动用 AI 生成群刊，可发送 Markdown 文件或渲染图片 |
+| [groupdigest](plugins/groupdigest) | 群刊 | jeanhua | 1.3.0 | 群消息达到阈值后自动用 AI 生成群刊，可发送 Markdown 文件或渲染图片 |
 
 ## 提交插件
 

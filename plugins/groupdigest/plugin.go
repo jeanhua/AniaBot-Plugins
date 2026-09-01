@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,12 @@ const (
 	cmdStatusFull = "群刊状态"
 	cmdListFull   = "群刊列表"
 	cmdClearFull  = "群刊清空"
+	cmdAll        = "all"
+	cmdAllCN      = "全部"
+	cmdNow        = "now"
+	cmdNowCN      = "立即生成"
+	cmdAllFull    = "群刊全部"
+	cmdNowFull    = "群刊立即生成"
 )
 
 // groupDigestConfig 群刊插件配置。实现 plugin.ConfigSchemaProvider 后，
@@ -61,8 +68,6 @@ type GroupDigestPlugin struct {
 	// chat 复用的群刊 AI 会话（每次生成前清空历史）；nil 表示 AI 参数未配置，
 	// 群刊生成不可用（不影响插件其余部分）。
 	chat *aichat.ChatBot
-	// maxToken 输出 token 上限（<=0 表示不传该参数）。
-	maxToken int
 
 	// groupSet 规范化后的作用群 ID 集合（message.FromString 统一 qq: 前缀）。
 	groupSet map[string]struct{}
@@ -80,7 +85,7 @@ func NewPlugin() *GroupDigestPlugin {
 	p.AdminOnly = false
 	p.ShowFor = plugininfo.ShowForGroup
 	p.Author = "jeanhua"
-	p.Version = "1.1.0"
+	p.Version = "1.3.0"
 	p.Order = plugin.LevelNormal
 	return p
 }
@@ -115,16 +120,11 @@ func (p *GroupDigestPlugin) Start(ctx context.Context, cfg *viper.Viper) error {
 		return nil
 	}
 
-	opts := []aichat.LLMClientOption{aichat.WithAPIFormat(cfg.GetString("plugin.ai_chat_bot.api_format"))}
-	if maxAttempts := cfg.GetInt("plugin.ai_chat_bot.retry.max_attempts"); maxAttempts > 1 {
-		baseDelay := time.Duration(cfg.GetInt("plugin.ai_chat_bot.retry.base_delay_sec")) * time.Second
-		if baseDelay <= 0 {
-			baseDelay = 2 * time.Second
-		}
-		opts = append(opts, aichat.WithRetry(maxAttempts, baseDelay))
-	}
-	if maxToken := cfg.GetInt("plugin.ai_chat_bot.max_token"); maxToken > 0 {
-		p.maxToken = maxToken
+	// 只复用 AI 对话插件的连接信息（base_url/api_key/model/api_format），
+	// 其余参数（重试/备用模型/采样/输出上限/缓存等）一律不继承：
+	// 群刊生成时跟随模型 API 默认，输出长度不受主对话 max_token 限制。
+	opts := []aichat.LLMClientOption{
+		aichat.WithAPIFormat(cfg.GetString("plugin.ai_chat_bot.api_format")),
 	}
 
 	chat, err := aichat.NewChatBot(baseURL, apiKey, model, p.cfg.Prompt, 0, nil, nil,
@@ -185,6 +185,22 @@ func (p *GroupDigestPlugin) OnGroupMsg(ctx context.Context, b bot.Bot, cmd comma
 	return true, nil
 }
 
+// OnFriendMsg 私聊消息事件：仅支持管理员查看全部作用群状态（/digest all 或 /群刊全部）。
+func (p *GroupDigestPlugin) OnFriendMsg(ctx context.Context, b bot.Bot, cmd command.Command, msg message.Message) (bool, error) {
+	if !p.cfg.Enable || !cmd.Mention {
+		return true, nil
+	}
+	if cmd.Name == cmdAllFull || cmd.Name == cmdDigest || cmd.Name == cmdDigestCN {
+		if cmd.Name == cmdAllFull || (len(cmd.Args) > 0 && (cmd.Args[0] == cmdAll || cmd.Args[0] == cmdAllCN)) {
+			p.handleAllStatus(b, msg, true)
+			return false, nil
+		}
+		p.replyFriendText(b, msg.Sender.UserId, "私聊可用命令：/digest all（或 /群刊全部）——管理员查看所有作用群的收集状态。")
+		return false, nil
+	}
+	return true, nil
+}
+
 // tryHandleCommand 处理群刊管理命令（@机器人）；返回 true 表示已处理并应停止传播。
 func (p *GroupDigestPlugin) tryHandleCommand(b bot.Bot, cmd command.Command, msg message.Message) bool {
 	switch cmd.Name {
@@ -197,9 +213,15 @@ func (p *GroupDigestPlugin) tryHandleCommand(b bot.Bot, cmd command.Command, msg
 	case cmdClearFull:
 		p.clearState(b, msg.GroupId)
 		return true
+	case cmdAllFull:
+		p.handleAllStatus(b, msg, false)
+		return true
+	case cmdNowFull:
+		p.manualGenerate(b, msg)
+		return true
 	case cmdDigest, cmdDigestCN:
 		if len(cmd.Args) == 0 {
-			p.replyText(b, msg.GroupId, "用法：/digest status（状态）| list [n]（最近消息）| clear（清空）\n中文别名：/群刊状态、/群刊列表、/群刊清空")
+			p.replyText(b, msg.GroupId, "用法：/digest status（状态）| list [n]（最近消息）| clear（清空）| all（全部群状态，管理员）| now（立即生成，管理员）\n中文别名：/群刊状态、/群刊列表、/群刊清空、/群刊全部、/群刊立即生成")
 			return true
 		}
 		switch cmd.Args[0] {
@@ -209,8 +231,12 @@ func (p *GroupDigestPlugin) tryHandleCommand(b bot.Bot, cmd command.Command, msg
 			p.replyList(b, msg.GroupId, cmd.Args[1:])
 		case cmdClear, cmdClearCN:
 			p.clearState(b, msg.GroupId)
+		case cmdAll, cmdAllCN:
+			p.handleAllStatus(b, msg, false)
+		case cmdNow, cmdNowCN:
+			p.manualGenerate(b, msg)
 		default:
-			p.replyText(b, msg.GroupId, "未知子命令："+cmd.Args[0]+"，可用 status / list / clear")
+			p.replyText(b, msg.GroupId, "未知子命令："+cmd.Args[0]+"，可用 status / list / clear / all / now")
 		}
 		return true
 	}
@@ -304,6 +330,104 @@ func (p *GroupDigestPlugin) clearState(b bot.Bot, gid message.QID) {
 func (p *GroupDigestPlugin) replyText(b bot.Bot, gid message.QID, text string) {
 	chain := msgchain.Builder().Group().Text(text)
 	b.SendGroupMsg(gid, chain.Build())
+}
+
+// replyFriendText 发送一条纯文本私聊消息。
+func (p *GroupDigestPlugin) replyFriendText(b bot.Bot, userID message.QID, text string) {
+	chain := msgchain.Builder().Friend().Text(text)
+	b.SendFriendMsg(userID, chain.Build())
+}
+
+// isAdmin 判断发送者是否为 bot.admin_id 配置的管理员。
+func (p *GroupDigestPlugin) isAdmin(userID message.QID) bool {
+	return p.SystemConfig.AdminId != "" && userID == p.SystemConfig.AdminId
+}
+
+// handleAllStatus 管理员查看所有作用群的收集状态（isFriend=true 时回复私聊）。
+func (p *GroupDigestPlugin) handleAllStatus(b bot.Bot, msg message.Message, isFriend bool) {
+	if !p.isAdmin(msg.Sender.UserId) {
+		if isFriend {
+			p.replyFriendText(b, msg.Sender.UserId, "该命令仅管理员可用。")
+		} else {
+			p.replyText(b, msg.GroupId, "该命令仅管理员可用。")
+		}
+		return
+	}
+	text := p.buildAllStatusText(b)
+	if isFriend {
+		p.replyFriendText(b, msg.Sender.UserId, text)
+	} else {
+		p.replyText(b, msg.GroupId, text)
+	}
+}
+
+// buildAllStatusText 汇总全部作用群的收集状态文本。
+func (p *GroupDigestPlugin) buildAllStatusText(b bot.Bot) string {
+	if len(p.groupSet) == 0 {
+		return "未配置任何作用群（plugin.groupdigest.group_ids）。"
+	}
+	ids := make([]string, 0, len(p.groupSet))
+	for gid := range p.groupSet {
+		ids = append(ids, gid)
+	}
+	sort.Strings(ids)
+
+	var sb strings.Builder
+	sb.WriteString("📊 全部群刊状态\n")
+	for _, gid := range ids {
+		st := p.stateFor(gid)
+		st.mu.Lock()
+		count, msgs, lastGen, generating := st.count, len(st.messages), st.lastGen, st.generating
+		st.mu.Unlock()
+
+		name := gid
+		if info, ok := b.GetGroupDetail(message.FromString(gid)); ok && info != nil && info.GroupName != "" {
+			name = info.GroupName + "（" + gid + "）"
+		}
+		fmt.Fprintf(&sb, "· %s：%d/%d，缓冲 %d 条", name, count, p.cfg.Threshold, msgs)
+		if generating {
+			sb.WriteString("，生成中")
+		}
+		if !lastGen.IsZero() {
+			fmt.Fprintf(&sb, "，最近 %s", lastGen.Format("01-02 15:04"))
+		}
+		sb.WriteString("\n")
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+// manualGenerate 管理员在当前群立即用已收集消息生成群刊。
+func (p *GroupDigestPlugin) manualGenerate(b bot.Bot, msg message.Message) {
+	if !p.isAdmin(msg.Sender.UserId) {
+		p.replyText(b, msg.GroupId, "该命令仅管理员可用。")
+		return
+	}
+	gid := msg.GroupId.String()
+	if !p.isTargetGroup(gid) {
+		p.replyText(b, msg.GroupId, "该群未在群刊作用列表中（plugin.groupdigest.group_ids）。")
+		return
+	}
+	st := p.stateFor(gid)
+	st.mu.Lock()
+	generating := st.generating
+	count := st.count
+	st.mu.Unlock()
+	if generating {
+		p.replyText(b, msg.GroupId, "该群正在生成群刊中，请稍后再试。")
+		return
+	}
+	if count == 0 {
+		p.replyText(b, msg.GroupId, "当前还没有收集到消息，无法立即生成。")
+		return
+	}
+	// 手动触发：threshold=1 且无冷却，绕过阈值与冷却，原子领取缓冲
+	if snapshot := st.tryTrigger(1, 0, time.Now()); len(snapshot) > 0 {
+		p.persistState(gid, st)
+		p.triggerDigest(b, msg.GroupId, snapshot)
+		p.replyText(b, msg.GroupId, fmt.Sprintf("已开始生成群刊（使用当前 %d 条已收集消息）。", len(snapshot)))
+	} else {
+		p.replyText(b, msg.GroupId, "立即生成失败（可能正在生成中），请稍后再试。")
+	}
 }
 
 // persistState 把指定群的计数与缓冲快照写入持久化存储（digest:g:<群ID>）。
