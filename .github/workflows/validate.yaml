@@ -1,0 +1,42 @@
+name: validate
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/**'
+      - 'index.json'
+      - 'scripts/**'
+      - '.github/workflows/validate.yaml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/**'
+      - 'scripts/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出插件仓库
+        uses: actions/checkout@v4
+        with:
+          path: plugins-repo
+
+      - name: 检出 AniaBot 源码（编译校验用）
+        uses: actions/checkout@v4
+        with:
+          repository: jeanhua/AniaBot
+          path: aniabot
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: aniabot/go.sum
+
+      - name: 校验插件并编译
+        working-directory: plugins-repo
+        env:
+          ANIA_SRC: ${{ github.workspace }}/aniabot
+        run: bash scripts/validate.sh
