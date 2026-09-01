@@ -31,6 +31,7 @@
 - 插件支持 `ConfigSchema()`，声明后面板「配置管理」会自动渲染表单，无需改面板代码
 - 平台能力用类型断言探测（如 `bot.QQ`），写 QQ 专属功能时在 `plugin.json` 的 `platforms` 里声明 `["qq"]`
 - 插件代码与框架 API 绑定编译期版本：编译不过就装不上，升级 AniaBot 后如 API 变化需要同步更新插件
+- 仓库根目录的 `go.mod` / `go.sum` 是**本地开发与 IDE 解析辅助**（gopls 消除框架包导入报错），安装与 CI 均不使用：`replace` 指向同级 `../AniaBot` 源码树（AniaBot 是主模块、无法作为版本化依赖拉取，该行是必需的）；clone 布局不同时改为指向你自己的 AniaBot 源码树路径即可
 
 ## 相关文档
 

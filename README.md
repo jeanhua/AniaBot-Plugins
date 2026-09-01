@@ -24,6 +24,7 @@ index.json        # 聚合索引（由 scripts/build-index.sh 生成，CI 在合
 | ID | 名称 | 作者 | 版本 | 说明 |
 | --- | --- | --- | --- | --- |
 | [example](plugins/example) | 示例插件 | AniaBot | 1.0.0 | 插件开发入门示例 |
+| [groupdigest](plugins/groupdigest) | 群刊 | jeanhua | 1.0.0 | 群消息达到阈值后自动用 AI 生成群刊，可发送 Markdown 文件或渲染图片 |
 
 ## 提交插件
 
@@ -35,6 +36,30 @@ index.json        # 聚合索引（由 scripts/build-index.sh 生成，CI 在合
 提交前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 本地开发
+
+> 仓库根目录的 `go.mod` / `go.sum` 仅用于**本地开发与 IDE 解析**（让 gopls 能识别
+> `github.com/jeanhua/AniaBot/...` 框架包，消除编辑器里的导入报错），**不参与插件安装与 CI**：
+> 市场安装只解压 `plugins/<id>/`，`scripts/validate.sh` 也是在 AniaBot 源码树内编译，
+> 两者都不会读取这两个文件。插件本身依然不带自己的 go.mod。
+
+```bash
+# 0.（IDE 支持，可选但推荐）两个仓库放到同一父目录，直接打开 AniaBot-Plugins 即可：
+#    ../AniaBot  ← go.mod 的 replace 指向这里
+#    ../AniaBot-Plugins
+#    在插件仓库根执行 go build ./... / go test ./... 可独立校验全部插件
+
+# 1. 克隆 AniaBot 与本仓库
+git clone https://github.com/jeanhua/AniaBot.git
+git clone https://github.com/jeanhua/AniaBot-Plugins.git
+
+# 2. 把正在开发的插件软链/复制到 AniaBot 源码树
+cp -r AniaBot-Plugins/plugins/my-plugin AniaBot/custom/plugins/my-plugin
+
+# 3. 在 AniaBot 中生成注册代码并运行
+cd AniaBot
+go run ./tools/plugingen
+go run cmd/main.go
+```
 
 ```bash
 # 1. 克隆 AniaBot 与本仓库
