@@ -25,6 +25,7 @@ index.json        # 聚合索引（由 scripts/build-index.sh 生成，CI 在合
 | --- | --- | --- | --- | --- |
 | [example](plugins/example) | 示例插件 | AniaBot | 1.0.0 | 插件开发入门示例 |
 | [groupdigest](plugins/groupdigest) | 群刊 | jeanhua | 1.3.1 | 群消息达到阈值后自动用 AI 生成群刊，可发送 Markdown 文件或渲染图片 |
+| [dicegirl](plugins/dicegirl) | 骰娘 | jeanhua | 1.0.0 | TRPG 骰娘：掷骰表达式 /r、COC 7e 技能检定 /ra、理智检定 /sc、今日人品 /jrrp |
 
 ## 提交插件
 

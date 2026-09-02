@@ -1,0 +1,15 @@
+{
+  "id": "dicegirl",
+  "name": "骰娘",
+  "description": "TRPG 骰娘：支持骰子表达式 /r、COC 7e 技能检定 /ra、理智检定 /sc 与今日人品 /jrrp，可直接发 .r 等裸指令",
+  "author": "jeanhua",
+  "version": "1.0.0",
+  "platforms": ["qq", "feishu", "telegram", "discord", "qqofficial"],
+  "tags": ["TRPG", "COC", "骰子", "娱乐"],
+  "api_version": 1,
+  "min_framework": "4.6.0",
+  "entry": {
+    "constructor": "NewPlugin"
+  },
+  "icon": ""
+}
