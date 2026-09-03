@@ -54,7 +54,7 @@
 
 ## 示例
 
-完整示例见 [plugins/example](../plugins/example)。核心骨架：
+完整示例见 [examples/example](../examples/example)（示例位于 `examples/`，仅作开发参考，不进入插件市场）。核心骨架：
 
 ```go
 package example

@@ -4,6 +4,8 @@ AniaBot 的官方插件市场仓库。
 
 本仓库只存放**插件源码与元信息**，不包含 AniaBot 框架代码。插件通过 AniaBot 面板的「插件市场」在线安装（下载源码 → 编译 → 重启），也可以手动克隆到本地 AniaBot 源码树的 `custom/plugins/<id>` 目录使用。
 
+此外 `examples/` 提供**示例插件**作为开发参考，不进入插件市场。
+
 ## 目录结构
 
 ```
@@ -12,26 +14,34 @@ plugins/
     plugin.json   # 插件元信息（必填）
     README.md     # 插件介绍（必填）
     *.go          # 插件源码（必填，不带 go.mod）
+examples/
+  example/        # 示例插件（开发参考，不进插件市场）
 docs/
   plugin-spec.md  # plugin.json 规范
 scripts/
+  build-index.sh  # 生成 index.json
+  build-readme.sh # 生成 README.md 插件列表
   validate.sh     # 本地校验脚本（与 CI 一致）
 index.json        # 聚合索引（由 scripts/build-index.sh 生成，CI 在合并到 main 后自动同步，无需手改）
 ```
 
 ## 插件列表
 
+> 本表由 `scripts/build-readme.sh` 根据 `plugins/*/plugin.json` 自动生成，合并到 main 后由 CI 自动更新，**请勿手动编辑**。
+
+<!-- PLUGIN-LIST:BEGIN -->
 | ID | 名称 | 作者 | 版本 | 说明 |
 | --- | --- | --- | --- | --- |
-| [example](plugins/example) | 示例插件 | AniaBot | 1.0.0 | 插件开发入门示例 |
+| [antiwithdrawal](plugins/antiwithdrawal) | 防撤回 | jeanhua | 1.0.0 | QQ 群防撤回：缓存每个群最近 100 条消息，/explore 以合并转发回顾最近 n 条，撤回的消息也能查看 |
+| [dicegirl](plugins/dicegirl) | 骰娘 | jeanhua | 1.0.0 | TRPG 骰娘：支持骰子表达式 /r、COC 7e 技能检定 /ra、理智检定 /sc 与今日人品 /jrrp，可直接发 .r 等裸指令 |
+| [eew](plugins/eew) | 地震预警与气象速报 | oldplum | 1.2.0 | 实时推送全国地震预警与速报，支持震中距与本地烈度估算、定时天气排行播报及 Cloudflare 自动降级 |
 | [groupdigest](plugins/groupdigest) | 群刊 | jeanhua | 1.3.1 | 群消息达到阈值后自动用 AI 生成群刊，可发送 Markdown 文件或渲染图片 |
-| [dicegirl](plugins/dicegirl) | 骰娘 | jeanhua | 1.0.0 | TRPG 骰娘：掷骰表达式 /r、COC 7e 技能检定 /ra、理智检定 /sc、今日人品 /jrrp |
-| [antiwithdrawal](plugins/antiwithdrawal) | 防撤回 | jeanhua | 1.0.0 | QQ 群防撤回：缓存群消息并以合并转发回顾 /explore，撤回也能看 |
+<!-- PLUGIN-LIST:END -->
 
 ## 提交插件
 
 1. Fork 本仓库
-2. 在 `plugins/` 下新建 `<plugin-id>/` 目录，包含 `plugin.json`、`README.md` 与源码（格式见 [docs/plugin-spec.md](docs/plugin-spec.md)，可参考 [example](plugins/example)）
+2. 在 `plugins/` 下新建 `<plugin-id>/` 目录，包含 `plugin.json`、`README.md` 与源码（格式见 [docs/plugin-spec.md](docs/plugin-spec.md)，可参考 [examples/example](examples/example) 示例插件）
 3. 运行 `bash scripts/validate.sh`（需本地有 Go 1.25+ 与 AniaBot 源码，或直接依赖 CI）
 4. 提交 Pull Request，CI 会自动校验；维护者人工审查后会合并
 
@@ -89,7 +99,7 @@ go run cmd/main.go
 | [插件市场使用指南](https://jeanhua.github.io/AniaBot/guide/plugin-marketplace) | 面板在线安装 / 升级 / 卸载插件 |
 | [插件规范（本仓库）](docs/plugin-spec.md) | plugin.json 元信息规范 |
 
-开发插件前，建议先阅读 AniaBot 的[插件开发文档](https://jeanhua.github.io/AniaBot/plugin/overview)，了解 `plugin.Meta`、消息事件、`msgchain` 消息构造器等基础 API，再参考本仓库的 [example](plugins/example) 示例。
+开发插件前，建议先阅读 AniaBot 的[插件开发文档](https://jeanhua.github.io/AniaBot/plugin/overview)，了解 `plugin.Meta`、消息事件、`msgchain` 消息构造器等基础 API，再参考本仓库的 [examples/example](examples/example) 示例插件。
 
 ## 安全与信任模型
 

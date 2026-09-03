@@ -8,8 +8,8 @@
 2. 在 `plugins/<plugin-id>/` 下创建插件，包含：
    - `plugin.json`（见 [docs/plugin-spec.md](docs/plugin-spec.md)）
    - `README.md`（介绍功能、命令、配置、注意事项）
-   - Go 源码（可参考 [plugins/example](plugins/example)）
-3. 本地校验：`bash scripts/validate.sh`（会编译插件；`index.json` 由 CI 在合并到 main 后自动同步，无需手动维护）
+   - Go 源码（可参考 [examples/example](examples/example) 示例插件，仅作开发参考，不进入市场列表）
+3. 本地校验：`bash scripts/validate.sh`（会编译插件；`index.json` 与 README 插件列表由 CI 在合并到 main 后自动同步，无需手动维护）
 4. 提交 PR，标题格式：`plugin: 新增 <插件名> (<id>)` 或 `plugin: 更新 <插件名> (<id>)`
 5. CI 自动校验通过后，等待维护者审查合并
 
@@ -23,7 +23,7 @@
 - [ ] 不执行任意 shell 命令（确有需要必须默认关闭、管理员确认）
 - [ ] 第三方依赖尽量少、来源可信；`go.mod` 变更需随 PR 说明
 - [ ] README 写清功能、命令、权限要求与配置项
-- [ ] `index.json` 可暂不更新：合并到 main 后 CI 会自动重新生成并提交（本地运行 `validate.sh` 若提示索引差异也无需处理）
+- [ ] `index.json` 与 README 插件列表可暂不更新：合并到 main 后 CI 会自动重新生成并提交（本地运行 `validate.sh` 若提示差异也无需处理）
 
 ## 插件开发提示
 

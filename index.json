@@ -1,6 +1,28 @@
 {
   "plugins": [
     {
+      "id": "antiwithdrawal",
+      "name": "防撤回",
+      "description": "QQ 群防撤回：缓存每个群最近 100 条消息，/explore 以合并转发回顾最近 n 条，撤回的消息也能查看",
+      "author": "jeanhua",
+      "version": "1.0.0",
+      "platforms": [
+        "qq"
+      ],
+      "tags": [
+        "群聊",
+        "防撤回",
+        "消息回顾"
+      ],
+      "api_version": 1,
+      "min_framework": "4.6.0",
+      "entry": {
+        "constructor": "NewPlugin"
+      },
+      "icon": "",
+      "readme": "README.md"
+    },
+    {
       "id": "dicegirl",
       "name": "骰娘",
       "description": "TRPG 骰娘：支持骰子表达式 /r、COC 7e 技能检定 /ra、理智检定 /sc 与今日人品 /jrrp，可直接发 .r 等裸指令",
@@ -45,30 +67,6 @@
         "防灾",
         "天气",
         "工具"
-      ],
-      "api_version": 1,
-      "min_framework": "4.6.0",
-      "entry": {
-        "constructor": "NewPlugin"
-      },
-      "icon": "",
-      "readme": "README.md"
-    },
-    {
-      "id": "example",
-      "name": "示例插件",
-      "description": "插件开发入门示例：at 机器人发送 /example 回复问候语",
-      "author": "jeanhua",
-      "version": "1.0.0",
-      "platforms": [
-        "qq",
-        "feishu",
-        "telegram",
-        "discord",
-        "qqofficial"
-      ],
-      "tags": [
-        "示例"
       ],
       "api_version": 1,
       "min_framework": "4.6.0",

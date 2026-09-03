@@ -5,7 +5,9 @@ on:
   pull_request:
     paths:
       - 'plugins/**'
+      - 'examples/**'
       - 'index.json'
+      - 'README.md'
       - 'scripts/**'
       - '.github/workflows/validate.yaml'
   push:
@@ -13,6 +15,7 @@ on:
       - main
     paths:
       - 'plugins/**'
+      - 'examples/**'
       - 'scripts/**'
 
 permissions:
@@ -39,28 +42,29 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: aniabot/go.sum
 
-      # 合并到 main 后自动重新生成并提交 index.json：
-      # 提交者无需手动维护插件索引，合并后由这里自动同步。
-      # 该提交只改 index.json，不在 push 触发路径内，不会造成死循环。
-      - name: 自动同步 index.json（main push / 手动触发）
+      # 合并到 main 后自动重新生成并提交 index.json 与 README 插件列表：
+      # 提交者无需手动维护这两个文件，合并后由这里自动同步。
+      # 该提交只改 index.json / README.md，不在 push 触发路径内，不会造成死循环。
+      - name: 自动同步 index.json 与 README 插件列表（main push / 手动触发）
         if: github.event_name != 'pull_request'
         working-directory: plugins-repo
         run: |
           bash scripts/build-index.sh
-          if ! git diff --quiet -- index.json; then
+          bash scripts/build-readme.sh
+          if ! git diff --quiet -- index.json README.md; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add index.json
-            git commit -m "chore: 自动同步 index.json（插件索引）"
+            git add index.json README.md
+            git commit -m "chore: 自动同步 index.json 与 README 插件列表"
             git push
-            echo "已自动提交更新后的 index.json"
+            echo "已自动提交更新后的 index.json / README.md"
           else
-            echo "index.json 已是最新，无需更新"
+            echo "index.json / README.md 已是最新，无需更新"
           fi
 
-      - name: 校验插件并编译（PR 允许索引差异，由 main 自动同步）
+      - name: 校验插件并编译（PR 允许自动生成文件差异，由 main 自动同步）
         working-directory: plugins-repo
         env:
           ANIA_SRC: ${{ github.workspace }}/aniabot
-          ALLOW_INDEX_DIFF: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+          ALLOW_AUTOGEN_DIFF: ${{ github.event_name == 'pull_request' && '1' || '0' }}
         run: bash scripts/validate.sh
