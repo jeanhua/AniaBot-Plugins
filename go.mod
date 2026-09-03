@@ -6,6 +6,7 @@ module github.com/jeanhua/AniaBot-Plugins
 go 1.25.0
 
 require (
+	github.com/gorilla/websocket v1.5.3
 	github.com/jeanhua/AniaBot v0.0.0
 	github.com/spf13/viper v1.21.0
 )
