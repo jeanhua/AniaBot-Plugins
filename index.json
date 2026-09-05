@@ -103,6 +103,32 @@
       "readme": "README.md"
     },
     {
+      "id": "setu",
+      "name": "Pixiv涩图",
+      "description": "群聊@我或私聊发送 /setu 随机 Pixiv 涩图，支持 tag 搜索、多连发、R18 开关与正则放行名单",
+      "author": "jeanhua",
+      "version": "1.0.0",
+      "platforms": [
+        "qq",
+        "feishu",
+        "telegram",
+        "discord",
+        "qqofficial"
+      ],
+      "tags": [
+        "娱乐",
+        "图片",
+        "pixiv"
+      ],
+      "api_version": 1,
+      "min_framework": "4.6.0",
+      "entry": {
+        "constructor": "NewPlugin"
+      },
+      "icon": "",
+      "readme": "README.md"
+    },
+    {
       "id": "whitelist",
       "name": "白名单管理",
       "description": "管理员用 /wl 命令管理黑白名单：增删查群聊/私聊名单、切换名单模式，改动即时生效；与内置「请求拦截插件」共用名单",

@@ -36,6 +36,7 @@ index.json        # 聚合索引（由 scripts/build-index.sh 生成，CI 在合
 | [dicegirl](plugins/dicegirl) | 骰娘 | jeanhua | 1.0.0 | TRPG 骰娘：支持骰子表达式 /r、COC 7e 技能检定 /ra、理智检定 /sc 与今日人品 /jrrp，可直接发 .r 等裸指令 |
 | [eew](plugins/eew) | 地震预警与气象速报 | oldplum | 1.2.0 | 实时推送全国地震预警与速报，支持震中距与本地烈度估算、定时天气排行播报及 Cloudflare 自动降级 |
 | [groupdigest](plugins/groupdigest) | 群刊 | jeanhua | 1.3.1 | 群消息达到阈值后自动用 AI 生成群刊，可发送 Markdown 文件或渲染图片 |
+| [setu](plugins/setu) | Pixiv涩图 | jeanhua | 1.0.0 | 群聊@我或私聊发送 /setu 随机 Pixiv 涩图，支持 tag 搜索、多连发、R18 开关与正则放行名单 |
 | [whitelist](plugins/whitelist) | 白名单管理 | disillusion | 1.0.0 | 管理员用 /wl 命令管理黑白名单：增删查群聊/私聊名单、切换名单模式，改动即时生效；与内置「请求拦截插件」共用名单 |
 <!-- PLUGIN-LIST:END -->
 
