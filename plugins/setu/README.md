@@ -1,0 +1,90 @@
+# Pixiv 涩图（setu）
+
+群聊 `@机器人` 或私聊发送 `/setu`，随机开一辆 Pixiv 好车。支持 tag 搜索、多连发、R18 开关，以及**基于正则表达式的放行名单**——只有放行名单里的群/好友能开车。
+
+## 数据来源
+
+- 图片索引：[Mabbs/pixiv-index](https://github.com/Mabbs/pixiv-index)（数据来自 Lolicon API），经 jsDelivr CDN 加速：
+  - 索引：`https://cdn.jsdelivr.net/gh/Mabbs/pixiv-index/index.json`（约 5 万条）
+  - 详情：`https://cdn.jsdelivr.net/gh/Mabbs/pixiv-index/data/<pid>_<p>.json`
+- **索引只缓存不狂拉**：`index.json` 只在插件启动、定时刷新（默认 12 小时）与管理员手动刷新时全量拉取一次，常驻内存；每次 `/setu` 只按需拉取命中的几个详情小文件（单个随机约 1 个，tag 搜索最多 `max_search_tries` 个，并发 5）。
+- 图片直链使用索引自带的 `i.pixiv.re` 代理地址；若打不开，可在配置里填其他镜像域名做 host 替换。
+- 画师主页：`https://www.pixiv.net/artworks/<pid>`，喜欢请去点赞收藏。
+
+> 索引库目前基本全是 R18 内容，R18 模式默认 `1`（仅 R18）。请确保使用场景合法合规：群成员均为成年人，并遵守群规与当地法律法规。
+
+## 命令
+
+群聊命令需 `@机器人`，私聊直接发送即可：
+
+| 命令 | 说明 |
+| --- | --- |
+| `/setu`（别名 `/涩图` `/色图`） | 随机来一张 |
+| `/setu 白丝` | 按 tag 搜索，多个 tag 空格分隔为 AND 关系，中日文都可（如 `/setu 白丝 制服`） |
+| `/setu 3 白丝` | 多连发，1~5 张，数量支持 `3` / `3连` / `3张` / `x3` 写法 |
+| `/setu r18` / `/setu safe` | 本次指定 R18 / 全年龄（受全局 R18 模式约束） |
+| `/setu status` | 查看放行状态、剩余额度与索引情况 |
+| `/setu refresh` | 管理员：立即刷新索引缓存 |
+| `/setu help` | 显示帮助 |
+
+还有冷却（默认每人 30 秒）、每日限量（默认每人 20 张）防刷屏，管理员可旁路。
+
+## 配置
+
+在面板「配置管理」中配置：
+
+| 配置键 | 说明 | 默认值 |
+| --- | --- | --- |
+| `plugin.setu.enable` | 是否启用 | `true` |
+| `plugin.setu.index_url` | 索引地址 | jsDelivr 上的 `index.json` |
+| `plugin.setu.data_base` | 详情地址前缀 | jsDelivr 上的 `data/` |
+| `plugin.setu.refresh_hours` | 索引刷新间隔（小时），`0` = 仅启动加载 | `12` |
+| `plugin.setu.r18_mode` | R18 模式：`0` 仅全年龄 / `1` 仅 R18 / `2` 混合 | `1` |
+| `plugin.setu.default_tags` | 无 tag 参数时的默认标签，每行一个 | 空（纯随机） |
+| `plugin.setu.image_proxy` | 图片代理域名，留空用索引自带地址 | 空 |
+| `plugin.setu.max_count` | 单次最多几连（1~5） | `3` |
+| `plugin.setu.max_search_tries` | tag 搜索最多拉取几个详情筛选 | `15` |
+| `plugin.setu.cooldown_sec` | 个人冷却（秒） | `30` |
+| `plugin.setu.daily_limit` | 每人每天上限，`0` 不限 | `20` |
+| `plugin.setu.allow_groups` | 放行群聊（正则），每行一条 | 空（都不放行） |
+| `plugin.setu.allow_friends` | 放行好友（正则），每行一条 | 空（都不放行） |
+| `plugin.setu.silent_deny` | 非放行会话保持沉默（否则回一句调侃的拒绝） | `false` |
+| `plugin.setu.admin_bypass` | 管理员不受放行名单/冷却/限量限制 | `true` |
+
+### 放行名单（正则）写法
+
+- 每条先尝试精确匹配，再作为正则对**完整 ID**（如 `qq:123456`）与**裸 ID**（如 `123456`）同时匹配。
+- 纯数字与 `qq:` 前缀等价，`123456` 和 `qq:123456` 是同一个群。
+- 常用例子：
+  - `123456`：只放行这一个群/好友
+  - `^qq:123.*`：放行 `123` 开头的全部 QQ 群
+  - `.*`：放行所有群/好友（最省事但最不安全）
+  - 留空：一个都不放行（默认，配好再开车）
+- 写错的正则启动时会打日志提醒，且该条自动失效（不会误放行）。
+
+### 群 / 好友 ID 写法
+
+- **QQ**：群号或 QQ 号（`123456` 或 `qq:123456`）
+- **飞书**：`fs:oc_xxx`
+- **Telegram**：`tg:-100xxx`
+- **Discord**：`dc:频道ID`
+- **QQ 官方**：`qo:群开放ID`
+
+> ID 可从面板日志或 AI 对话的会话 ID（`g:<群ID>`）中查看。
+
+## 行为说明
+
+- 默认**全部拒绝**：放行名单留空时任何群/好友都开不了车，先配置再玩。
+- 群聊必须 `@机器人` 才触发（与框架其他命令一致），私聊无需 `@`。
+- 命中命令后返回 `false` 截断传播，避免 AI 插件又接一嘴；`silent_deny` 开启且未放行时返回 `true` 装作没看见。
+- tag 搜索是“随机抽一批详情再过滤”，冷门 tag 可能翻完全部尝试数也命中不了，此时会告诉你翻了多少候选，换个通用词即可。
+- 图片发送失败多为网络/代理问题，换 `image_proxy` 或稍后再试。
+
+## 平台支持
+
+QQ / 飞书 / Telegram / Discord / QQ 官方均支持（只用框架通用收发能力）。
+
+## 合规提示
+
+- R18 内容仅限成年人查看，请确认群成员构成与群规允许，并遵守当地法律法规。
+- 上线前建议：放行名单只填明确允许的群，冷却与每日限量保持开启，`silent_deny` 按需开启避免在陌生群暴露。
