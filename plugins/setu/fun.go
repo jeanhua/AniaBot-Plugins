@@ -110,3 +110,62 @@ const helpTextClean = `涩图插件 /setu 玩法：
 群聊请 @我再发，私聊直接发就行。
 只有放行名单里的群/好友能开车，其余地方会被拒之门外；
 tag 搜不到时换个通用词试试。适度涩涩，注意身体🍵`
+
+// 以下为下载/发送失败时的面向用户文案：必须说清哪张、为什么、怎么办，绝不静默。
+
+// setuTitle 作品标题展示（空标题回退“无题”，失败文案里也保持可读）。
+func setuTitle(m *PixivMeta) string {
+	if m == nil || strings.TrimSpace(m.Title) == "" {
+		return "无题"
+	}
+	return strings.TrimSpace(m.Title)
+}
+
+// downloadFailSummary 部分下载失败时的汇总（一句话 + 每张原因），拼在成功消息末尾。
+func downloadFailSummary(failed []setuDownload) string {
+	if len(failed) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "⚠️ %d 张下载失败，只发出了成功的部分", len(failed))
+	for _, f := range failed {
+		var pid int64
+		if f.meta != nil {
+			pid = f.meta.Pid
+		}
+		fmt.Fprintf(&b, "\n· pid %d：%s", pid, shortDownloadErr(f.err))
+	}
+	b.WriteString("\n💡 稍后再试，或让管理员换 image_proxy 镜像")
+	return b.String()
+}
+
+// allDownloadFailText 全部下载失败时的单独回复（含作品页链接兜底，至少能点进去看）。
+func allDownloadFailText(failed []setuDownload) string {
+	var b strings.Builder
+	b.WriteString("😭 图片都下载失败了，一张也没发出来")
+	for _, f := range failed {
+		if f.meta != nil {
+			fmt.Fprintf(&b, "\n·《%s》：%s\n  作品页：%s", setuTitle(f.meta), shortDownloadErr(f.err), f.meta.ArtworkURL())
+		} else {
+			fmt.Fprintf(&b, "\n· 未知图片：%s", shortDownloadErr(f.err))
+		}
+	}
+	b.WriteString("\n💡 稍后再试，或让管理员换 image_proxy（如 i.pixiv.cat）")
+	return b.String()
+}
+
+// sendFailSummary 图已下载但 Bot 返回失败时的汇总（多为 NapCat 网络波动、风控或消息过大）。
+func sendFailSummary(failed []setuDownload) string {
+	if len(failed) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "😭 %d 张图已下载但发送失败（Bot 返回失败），可能是网络波动、风控或图片过大", len(failed))
+	for _, f := range failed {
+		if f.meta != nil {
+			fmt.Fprintf(&b, "\n·《%s》作品页：%s", setuTitle(f.meta), f.meta.ArtworkURL())
+		}
+	}
+	b.WriteString("\n💡 作品页可点进去看；持续失败请让管理员看日志排查")
+	return b.String()
+}

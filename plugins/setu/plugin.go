@@ -48,7 +48,7 @@ func NewPlugin() *SetuPlugin {
 	p.AdminOnly = false
 	p.ShowFor = plugininfo.ShowForGroup | plugininfo.ShowForFriend
 	p.Author = "jeanhua"
-	p.Version = "1.0.0"
+	p.Version = "1.1.0"
 	p.Order = plugin.LevelNormal
 	return p
 }
@@ -252,7 +252,7 @@ func (p *SetuPlugin) handleSetu(ctx context.Context, b bot.Bot, args []string, m
 		return
 	}
 	p.Logger.Info("涩图开车", "user", msg.Sender.UserId, "is_group", isGroup, "tags", tags, "count", len(found), "tried", tried)
-	p.sendSetu(b, msg, isGroup, nick, found)
+	p.sendSetu(ctx, b, msg, isGroup, nick, found)
 }
 
 // takeQuota 消费一次请求额度，返回 (放行与否, 受限种类, 冷却剩余, 每日剩余)。
@@ -397,38 +397,78 @@ func (p *SetuPlugin) replyText(b bot.Bot, msg message.Message, isGroup bool, tex
 	}
 }
 
-// sendSetu 发送涩图：一句话召唤词 + 每张图的配文与图片 + 随机 footer。
-func (p *SetuPlugin) sendSetu(b bot.Bot, msg message.Message, isGroup bool, nick string, metas []*PixivMeta) {
+// sendSetu 发送涩图：先把原图下载到本地再转 base64 发送（不再直发 URL，
+// 避免 NapCat 侧拉图床 403/超时导致无提示失败），逐张发送、逐张报错。
+func (p *SetuPlugin) sendSetu(ctx context.Context, b bot.Bot, msg message.Message, isGroup bool, nick string, metas []*PixivMeta) {
 	if len(metas) == 0 {
 		return
 	}
-	if isGroup {
-		c := msgchain.Builder().Group()
-		c.Mention(msg.Sender.UserId).Text("\n" + summonLine(nick, len(metas)))
-		for i, m := range metas {
-			c.Text("\n" + captionLine(i+1, len(metas), m))
-			c.ImageUrl(rewriteImageHost(m.ImageURL(), p.cfg.ImageProxy))
+	results := p.downloadSetuImages(ctx, metas)
+	var okList, dlFailed []setuDownload
+	for _, r := range results {
+		if r.err != nil || r.b64 == "" {
+			if r.err == nil {
+				r.err = fmt.Errorf("图片数据为空")
+			}
+			dlFailed = append(dlFailed, r)
+			continue
 		}
-		if footer := pickRand(footers); footer != "" {
-			c.Text("\n" + footer)
-		}
-		if _, ok := b.SendGroupMsg(msg.GroupId, c.Build()); !ok {
-			p.Logger.Warn("群聊涩图发送失败", "group", msg.GroupId, "count", len(metas))
-		}
+		okList = append(okList, r)
+	}
+	// 全军覆没：必须明确告诉用户为什么，并给作品页链接兜底。
+	if len(okList) == 0 {
+		p.Logger.Warn("涩图全部下载失败", "count", len(metas), "user", msg.Sender.UserId, "reason", shortDownloadErr(dlFailed[0].err))
+		p.replyText(b, msg, isGroup, allDownloadFailText(dlFailed))
 		return
 	}
-	c := msgchain.Builder().Friend()
-	c.Text(summonLine(nick, len(metas)))
-	for i, m := range metas {
-		c.Text("\n" + captionLine(i+1, len(metas), m))
-		c.ImageUrl(rewriteImageHost(m.ImageURL(), p.cfg.ImageProxy))
+	if len(dlFailed) > 0 {
+		p.Logger.Warn("涩图部分下载失败", "ok", len(okList), "failed", len(dlFailed), "user", msg.Sender.UserId, "reason", shortDownloadErr(dlFailed[0].err))
 	}
-	if footer := pickRand(footers); footer != "" {
-		c.Text("\n" + footer)
+	footer := pickRand(footers)
+	total := len(okList)
+	var sendFailed []setuDownload
+	for i, r := range okList {
+		first, last := i == 0, i == total-1
+		text := captionLine(i+1, total, r.meta)
+		if first {
+			text = summonLine(nick, total) + "\n" + text
+		}
+		if last {
+			if footer != "" {
+				text += "\n" + footer
+			}
+			if len(dlFailed) > 0 {
+				text += "\n" + downloadFailSummary(dlFailed)
+			}
+		}
+		var sent bool
+		if isGroup {
+			c := msgchain.Builder().Group()
+			if first {
+				c.Mention(msg.Sender.UserId).Text("\n" + text)
+			} else {
+				c.Text(text)
+			}
+			c.ImageBase64(r.b64)
+			_, sent = b.SendGroupMsg(msg.GroupId, c.Build())
+		} else {
+			c := msgchain.Builder().Friend()
+			c.Text(text)
+			c.ImageBase64(r.b64)
+			_, sent = b.SendFriendMsg(msg.Sender.UserId, c.Build())
+		}
+		if !sent {
+			p.Logger.Warn("涩图单张发送失败", "pid", r.meta.Pid, "size", r.size, "user", msg.Sender.UserId, "is_group", isGroup)
+			sendFailed = append(sendFailed, r)
+		}
 	}
-	if _, ok := b.SendFriendMsg(msg.Sender.UserId, c.Build()); !ok {
-		p.Logger.Warn("私聊涩图发送失败", "user", msg.Sender.UserId, "count", len(metas))
+	// 图已下载但发不出去：同样要明确提示 + 给作品页链接，而不是只记日志。
+	if len(sendFailed) > 0 {
+		p.Logger.Warn("涩图部分发送失败", "sent", total-len(sendFailed), "failed", len(sendFailed), "user", msg.Sender.UserId)
+		p.replyText(b, msg, isGroup, sendFailSummary(sendFailed))
+		return
 	}
+	p.Logger.Info("涩图开车完成", "user", msg.Sender.UserId, "is_group", isGroup, "sent", total, "dl_failed", len(dlFailed))
 }
 
 // 确保 regexp 被使用（Start 里做正则预检）。
