@@ -10,7 +10,7 @@ import (
 
 var summonLines = []string{
 	"少女祈祷中……锵锵！%s 要的 %d 张好东西来了~",
-	"从 Pixiv 深处偷来了 %d 张，%s 接好！",
+	"从 Pixiv 深处偷来了 %s 要的 %d 张，接好！",
 	"嘿嘿，%s 的 %d 连发车了，坐稳！",
 	"芜湖，起飞！给 %s 的 %d 张~",
 	"嘘……小声点，%s 的 %d 张到了",
@@ -38,7 +38,7 @@ var dailyMessages = []string{
 var emptyMessages = []string{
 	"在 %d 个候选中没找到 [%s] 相关的涩图，换个 tag 试试~",
 	"翻了 %d 张都没找到 [%s]，P站少女表示没听过这个 XP……",
-	"[%s] 太冷门了（翻了 %d 张），试试更通用的词？",
+	"翻了 %d 张都没找到 [%s]，太冷门了，试试更通用的词？",
 }
 
 var errorMessages = []string{
