@@ -84,7 +84,7 @@ func captionLine(idx, total int, m *PixivMeta) string {
 	if m.R18 {
 		b.WriteString(" 🔞")
 	}
-	fmt.Fprintf(&b, "\n🔗 https://www.pixiv.net/artworks/%d", m.Pid)
+	fmt.Fprintf(&b, "\n🔗 https://www.pixiv.net/artworks/%d ", m.Pid)
 	if m.P > 0 {
 		fmt.Fprintf(&b, "（第 %d 张）", m.P+1)
 	}

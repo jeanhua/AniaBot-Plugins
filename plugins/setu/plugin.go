@@ -48,7 +48,7 @@ func NewPlugin() *SetuPlugin {
 	p.AdminOnly = false
 	p.ShowFor = plugininfo.ShowForGroup | plugininfo.ShowForFriend
 	p.Author = "jeanhua"
-	p.Version = "1.1.1"
+	p.Version = "1.1.2"
 	p.Order = plugin.LevelNormal
 	return p
 }
