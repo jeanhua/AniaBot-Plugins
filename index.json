@@ -103,11 +103,37 @@
       "readme": "README.md"
     },
     {
+      "id": "pixiv",
+      "name": "Pixiv",
+      "description": "登录 Pixiv 后支持插画搜索、排行榜、推荐、作品/画师查询与相关作品，内置分级(R18)过滤、个人限流与群放行名单",
+      "author": "jeanhua",
+      "version": "1.0.0",
+      "platforms": [
+        "qq",
+        "feishu",
+        "telegram",
+        "discord",
+        "qqofficial"
+      ],
+      "tags": [
+        "图片",
+        "pixiv",
+        "ACG"
+      ],
+      "api_version": 1,
+      "min_framework": "4.6.0",
+      "entry": {
+        "constructor": "NewPlugin"
+      },
+      "icon": "",
+      "readme": "README.md"
+    },
+    {
       "id": "setu",
       "name": "Pixiv涩图",
       "description": "群聊@我或私聊发送 /setu 随机 Pixiv 涩图，支持 tag 搜索、多连发、R18 开关与正则放行名单",
       "author": "jeanhua",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "platforms": [
         "qq",
         "feishu",
