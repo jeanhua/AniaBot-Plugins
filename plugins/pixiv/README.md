@@ -23,14 +23,14 @@
 
 插件使用 Pixiv App API（OAuth）。在面板「配置管理 → Pixiv」填入 `Refresh Token` 即可：
 
-1. 用开源工具获取 refresh_token，例如 [gppt](https://github.com/eggplants/get-pixivpy-token) 生态的 npm 版：
+1. 用开源工具获取 refresh_token，例如 [gppt](https://github.com/eggplants/get-pixivpy-token)：
 
    ```bash
-   npm install -g gppt
+   pip install gppt
    gppt login
    ```
 
-   成功后输出 JSON 里的 `refresh_token` 字段即所需值（长期有效）。其他同类工具（pixivpy 生态等）均可，能拿到 refresh_token 就行；登录如遇人机验证按工具提示完成。
+   成功后输出 JSON 里的 `refresh_token` 字段即所需值（长期有效）。其他同类工具均可，能拿到 refresh_token 就行；登录如遇人机验证按工具提示完成。
 2. 粘贴到面板保存即可。插件会自动换取并续期 access_token（约每小时一次），无需人工干预；refresh_token 一般不会变，配置一次长期使用。
 
 > 建议：使用小号登录；bot 高频访问有触发 Pixiv 风控的可能。新注册账号部分功能可能受限。

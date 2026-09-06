@@ -14,8 +14,20 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-// pixivAPIBase Pixiv App API 根地址。
-const pixivAPIBase = "https://app-api.pixiv.net"
+// Pixiv App API 地址与端点。路径以成熟开源客户端（PixEz/pixivpy）为准——
+// 排行是 /v1/illust/ranking 而不是 /v1/ranking/illust，相关作品用 v2，
+// pixiv 会不定期挪动端点，失联时先来这里对照。
+const (
+	pixivAPIBase = "https://app-api.pixiv.net"
+
+	epSearchIllust      = "/v1/search/illust"
+	epIllustRanking     = "/v1/illust/ranking"
+	epIllustDetail      = "/v1/illust/detail"
+	epIllustRelated     = "/v2/illust/related"
+	epIllustRecommended = "/v1/illust/recommended"
+	epUserIllusts       = "/v1/user/illusts"
+	epUserDetail        = "/v1/user/detail"
+)
 
 // 通用列表响应。
 type illustListResp struct {
@@ -107,6 +119,8 @@ func (p *PixivPlugin) apiGet(ctx context.Context, path string, query map[string]
 			SetHeader("X-Client-Hash", clientHash(clientTime)).
 			SetHeader("App-OS", pixivAppOS).
 			SetHeader("App-OS-Version", pixivAppOSVersion).
+			SetHeader("App-Version", pixivAppVersion).
+			SetHeader("Accept-Language", "zh-CN").
 			SetHeader("User-Agent", pixivAppUserAgent)
 		if query != nil {
 			req = req.SetQueryParams(query)
@@ -221,7 +235,7 @@ func (p *PixivPlugin) apiSearchIllust(ctx context.Context, word string, offset i
 	if offset > 0 {
 		q["offset"] = strconv.Itoa(offset)
 	}
-	if err := p.apiGet(ctx, "/v1/search/illust", q, &resp); err != nil {
+	if err := p.apiGet(ctx, epSearchIllust, q, &resp); err != nil {
 		return nil, -1, err
 	}
 	return resp.Illusts, nextOffset(resp.NextURL), nil
@@ -234,7 +248,7 @@ func (p *PixivPlugin) apiRankingIllust(ctx context.Context, mode string, offset 
 	if offset > 0 {
 		q["offset"] = strconv.Itoa(offset)
 	}
-	if err := p.apiGet(ctx, "/v1/ranking/illust", q, &resp); err != nil {
+	if err := p.apiGet(ctx, epIllustRanking, q, &resp); err != nil {
 		return nil, -1, err
 	}
 	return resp.Illusts, nextOffset(resp.NextURL), nil
@@ -247,7 +261,7 @@ func (p *PixivPlugin) apiIllustDetail(ctx context.Context, id int64) (illust, er
 		"illust_id": strconv.FormatInt(id, 10),
 		"filter":    "for_ios",
 	}
-	if err := p.apiGet(ctx, "/v1/illust/detail", q, &resp); err != nil {
+	if err := p.apiGet(ctx, epIllustDetail, q, &resp); err != nil {
 		return illust{}, err
 	}
 	return resp.Illust, nil
@@ -264,7 +278,7 @@ func (p *PixivPlugin) apiUserIllusts(ctx context.Context, userID string, offset 
 	if offset > 0 {
 		q["offset"] = strconv.Itoa(offset)
 	}
-	if err := p.apiGet(ctx, "/v1/user/illusts", q, &resp); err != nil {
+	if err := p.apiGet(ctx, epUserIllusts, q, &resp); err != nil {
 		return nil, -1, err
 	}
 	return resp.Illusts, nextOffset(resp.NextURL), nil
@@ -280,7 +294,7 @@ func (p *PixivPlugin) apiRelatedIllust(ctx context.Context, id int64, offset int
 	if offset > 0 {
 		q["offset"] = strconv.Itoa(offset)
 	}
-	if err := p.apiGet(ctx, "/v1/illust/related", q, &resp); err != nil {
+	if err := p.apiGet(ctx, epIllustRelated, q, &resp); err != nil {
 		return nil, -1, err
 	}
 	return resp.Illusts, nextOffset(resp.NextURL), nil
@@ -297,7 +311,7 @@ func (p *PixivPlugin) apiRecommendedIllust(ctx context.Context, offset int) ([]i
 	if offset > 0 {
 		q["offset"] = strconv.Itoa(offset)
 	}
-	if err := p.apiGet(ctx, "/v1/illust/recommended", q, &resp); err != nil {
+	if err := p.apiGet(ctx, epIllustRecommended, q, &resp); err != nil {
 		return nil, -1, err
 	}
 	return resp.Illusts, nextOffset(resp.NextURL), nil
@@ -307,7 +321,7 @@ func (p *PixivPlugin) apiRecommendedIllust(ctx context.Context, offset int) ([]i
 func (p *PixivPlugin) apiUserDetail(ctx context.Context, userID string) (userDetailResp, error) {
 	var resp userDetailResp
 	q := map[string]string{"user_id": userID}
-	if err := p.apiGet(ctx, "/v1/user/detail", q, &resp); err != nil {
+	if err := p.apiGet(ctx, epUserDetail, q, &resp); err != nil {
 		return userDetailResp{}, err
 	}
 	return resp, nil

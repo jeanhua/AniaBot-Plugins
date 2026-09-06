@@ -19,8 +19,9 @@ const (
 	pixivOAuthClientSecret = "lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj"
 	pixivHashSecret        = "28c1fdd170a5204386cb1313c7077b34f83e4aaf4aa829ce78c231e05b0bae2c"
 	pixivAppUserAgent      = "PixivAndroidApp/5.0.233 (Android 11; Pixel 5)"
-	pixivAppOS             = "ios"
-	pixivAppOSVersion      = "14.6"
+	pixivAppOS             = "Android"
+	pixivAppOSVersion      = "Android 11"
+	pixivAppVersion        = "5.0.233"
 )
 
 // authResp /auth/token 的响应。

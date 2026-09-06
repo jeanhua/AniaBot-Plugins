@@ -256,7 +256,10 @@ func (p *MyPlugin) ConfigSchema() any { return &p.cfg } // 必须每次返回同
 
 - 框架启动时：反射 `cfg` 标签注册字段 → 缺失键写入默认值 → 面板按 `label/group/help` 渲染表单
   → `Start` 之前把值填进结构体，插件只读 `p.cfg` 字段即可（`dicegirl`/`eew` 范例）。
-- tag 说明：`cfg`（点分键，统一 `plugin.<id>.*`，小写）、`label`（表单名）、`group`（表单分组）、
+- tag 说明：`cfg`（点分键，统一 `plugin.<id>.*`，小写）、`label`（表单名）、
+  `group`（表单分组，**一个插件只建一个 group、命名用插件名**，如 setu 全部 `group:"涩图"`、
+  eew 全部 `group:"地震预警"`——面板「配置管理」侧边栏按 group 聚合成目录项，拆成
+  "网络/展示/限流"等多个组会把侧边栏撑出一串碎条目）、
   `help`（说明）、`default`（默认值）、`type`（`string/password/int/float/bool/text/strings/ints/select`，
   不写按 Go 类型推断）、`options`（select 候选，逗号分隔）、`sensitive`（敏感字段面板掩码）。
   Go 指针标量 = 可选字段（未配置保持 nil）。
@@ -344,6 +347,8 @@ go test ./plugins/<id>/...
 - 私聊回复目标是 `msg.Sender.UserId`，群聊是 `msg.GroupId`；群聊想 @ 对方用 `c.Mention(...)`。
 - `QID` 直接 `==` 比较；`message.FromString("123")` 会自动加 `qq:` 前缀，别手拼字符串。
 - `ConfigSchema` 返回 `&p.cfg` 同一指针；`Start` 里读 `p.cfg`，别再手写 `cfg.Get*`。
+- config 的 `group` 一个插件只能有一个、名字用插件名：侧边栏按 group 聚合，按主题拆组
+  （"登录/网络/限流…"）会在「配置管理」侧边栏产生一堆碎条目，与其他插件风格不一致。
 - 拦截器插件 `Order` 设小值抢跑，但 `Start` 里读别插件的数据可能为空——放 `Awake` 里读。
 - 图片/文件 URL 3 分钟过期（rkey 签名），缓存消息重发要处理过期（抄 `antiwithdrawal`）。
 - 长耗时（下载/AI/轮询）别卡在 `OnGroupMsg` 里超过 5 分钟；常驻后台任务在 `Start` 起 goroutine，
