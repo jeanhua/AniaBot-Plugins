@@ -46,7 +46,7 @@ func NewPlugin() *PixivPlugin {
 	p.AdminOnly = false
 	p.ShowFor = plugininfo.ShowForGroup | plugininfo.ShowForFriend
 	p.Author = "jeanhua"
-	p.Version = "1.0.2"
+	p.Version = "1.0.3"
 	p.Order = plugin.LevelNormal
 	return p
 }

@@ -1,6 +1,7 @@
 package pixiv
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -280,5 +281,45 @@ func TestParseAPIErrorMessage(t *testing.T) {
 	}
 	if got := parseAPIErrorMessage([]byte(`{"error":{"reason":"OAuth error"}}`), "fb"); got != "OAuth error" {
 		t.Fatalf("应取 reason, got %q", got)
+	}
+}
+
+func TestFlexString(t *testing.T) {
+	cases := []struct {
+		name string
+		json string
+		want string
+	}{
+		{"数字 id（作品列表返回这种）", `{"id":12345}`, "12345"},
+		{"字符串 id（登录响应返回这种）", `{"id":"678"}`, "678"},
+		{"null", `{"id":null}`, ""},
+		{"字段缺失", `{}`, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var u struct {
+				ID flexString `json:"id"`
+			}
+			if err := json.Unmarshal([]byte(c.json), &u); err != nil {
+				t.Fatalf("解析 %s 不应报错: %v", c.json, err)
+			}
+			if string(u.ID) != c.want {
+				t.Fatalf("解析 %s = %q, want %q", c.json, u.ID, c.want)
+			}
+		})
+	}
+}
+
+func TestPixivUserIDNumberAndString(t *testing.T) {
+	// 复现线上问题：作品列表里 user.id 是数字，pixivUser 必须能吃下。
+	var resp struct {
+		Illusts []illust `json:"illusts"`
+	}
+	body := `{"illusts":[{"id":100,"title":"t","user":{"id":9876543210,"name":"画师"}}]}`
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("数字 user.id 解析失败: %v", err)
+	}
+	if len(resp.Illusts) != 1 || resp.Illusts[0].User.ID != "9876543210" {
+		t.Fatalf("user.id 解析结果不对: %+v", resp.Illusts)
 	}
 }

@@ -132,7 +132,7 @@ func (p *PixivPlugin) refreshSessionLocked(ctx context.Context) error {
 	}
 	s.expiresAt = time.Now().Add(ttl)
 	if ar.User.ID != "" {
-		s.userID = ar.User.ID
+		s.userID = string(ar.User.ID)
 	}
 	if ar.User.Name != "" {
 		s.userName = ar.User.Name

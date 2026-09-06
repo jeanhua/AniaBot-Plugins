@@ -1,14 +1,41 @@
 package pixiv
 
-import "fmt"
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
+// flexString 兼容 Pixiv 接口对同一字段时而返回数字、时而返回字符串的不一致
+// （典型：user.id 在登录响应里是字符串，在作品列表里是数字）。
+type flexString string
+
+func (s *flexString) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		*s = ""
+		return nil
+	}
+	if b[0] == '"' {
+		var v string
+		if err := json.Unmarshal(b, &v); err != nil {
+			return err
+		}
+		*s = flexString(v)
+		return nil
+	}
+	// 数字字面量按原文保存（id 均为十进制，无需再加工）。
+	*s = flexString(b)
+	return nil
+}
 
 // Pixiv App API 数据模型：只解析插件用得到的字段，其余忽略。
 
 // pixivUser 作品作者/登录用户信息。
 type pixivUser struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Account string `json:"account"`
+	ID      flexString `json:"id"`
+	Name    string     `json:"name"`
+	Account string     `json:"account"`
 }
 
 // imageURLs 同一张图的不同尺寸地址（original 只在详情/搜索等完整数据里出现，
