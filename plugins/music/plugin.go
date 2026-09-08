@@ -43,10 +43,11 @@ type MusicPlugin struct {
 	limiter  *rateLimiter              // 全局 API 频率保护（官方 50 次/5 分钟）
 }
 
-// searchSession 一次搜索的候选缓存，供序号点歌/查歌词。
+// searchSession 一次搜索的候选缓存（单页），供序号点歌/查歌词与翻页。
 type searchSession struct {
 	keyword   string
-	source    string // 会话创建时的音源，点播/歌词按它请求，避免改配置后 id 对不上
+	source    string // 会话创建时的音源，点播/歌词/翻页按它请求，避免改配置后 id 对不上
+	page      int    // 当前页码，从 1 起
 	tracks    []*track
 	createdAt time.Time
 }
@@ -58,11 +59,11 @@ func NewPlugin() *MusicPlugin {
 		cooldown: make(map[string]time.Time),
 	}
 	p.Name = "音乐点歌"
-	p.HelpWords = "at 我发送 /点歌 关键词 搜歌，/点歌 序号 下载歌曲发文件，/点歌 歌词 序号 看歌词"
+	p.HelpWords = "at 我发送 /点歌 关键词 搜歌，/点歌 下一页 翻页，/点歌 序号 下载歌曲发文件，/点歌 歌词 序号 看歌词"
 	p.AdminOnly = false
 	p.ShowFor = plugininfo.ShowForGroup | plugininfo.ShowForFriend
 	p.Author = "jeanhua"
-	p.Version = "1.0.0"
+	p.Version = "1.1.0"
 	p.Order = plugin.LevelNormal
 	return p
 }
@@ -107,12 +108,6 @@ func (p *MusicPlugin) Start(ctx context.Context, cfg *viper.Viper) error {
 	}
 	if p.cfg.SearchCount > 30 {
 		p.cfg.SearchCount = 30
-	}
-	if p.cfg.MaxResults < 1 {
-		p.cfg.MaxResults = 8
-	}
-	if p.cfg.MaxResults > 20 {
-		p.cfg.MaxResults = 20
 	}
 	if p.cfg.SessionMin < 1 {
 		p.cfg.SessionMin = 10
@@ -179,7 +174,26 @@ func (p *MusicPlugin) handleMusic(ctx context.Context, b bot.Bot, cmd command.Co
 		if !p.passSearchLimits(b, msg, isGroup) {
 			return
 		}
-		p.doSearch(ctx, b, msg, isGroup, act.keyword)
+		p.doSearchPage(ctx, b, msg, isGroup, p.cfg.Source, act.keyword, 1)
+	case "next":
+		if !p.passAPIQuota(b, msg, isGroup) {
+			return
+		}
+		p.flipPage(ctx, b, msg, isGroup, 1)
+	case "prev":
+		if !p.passAPIQuota(b, msg, isGroup) {
+			return
+		}
+		p.flipPage(ctx, b, msg, isGroup, -1)
+	case "page":
+		if act.index <= 0 {
+			p.replyText(b, msg, isGroup, "用法：/点歌 页 页码，先搜索拿到列表哦")
+			return
+		}
+		if !p.passAPIQuota(b, msg, isGroup) {
+			return
+		}
+		p.jumpPage(ctx, b, msg, isGroup, act.index)
 	case "pick":
 		if !p.passAPIQuota(b, msg, isGroup) {
 			return
@@ -197,15 +211,44 @@ func (p *MusicPlugin) handleMusic(ctx context.Context, b bot.Bot, cmd command.Co
 	}
 }
 
-// musicAction 解析后的子命令：kind 为 help/search/pick/lyric。
+// flipPage 下一页/上一页：沿当前会话的关键词与音源翻页。
+func (p *MusicPlugin) flipPage(ctx context.Context, b bot.Bot, msg message.Message, isGroup bool, delta int) {
+	sess, ok := p.currentSession(msg)
+	if !ok {
+		p.replyText(b, msg, isGroup, "没有有效的搜索结果，先发 /点歌 关键词 搜索一下吧")
+		return
+	}
+	page := sess.page + delta
+	if page < 1 {
+		p.replyText(b, msg, isGroup, "已经是第一页了")
+		return
+	}
+	p.doSearchPage(ctx, b, msg, isGroup, sess.source, sess.keyword, page)
+}
+
+// jumpPage 跳到指定页：沿当前会话的关键词与音源。
+func (p *MusicPlugin) jumpPage(ctx context.Context, b bot.Bot, msg message.Message, isGroup bool, page int) {
+	sess, ok := p.currentSession(msg)
+	if !ok {
+		p.replyText(b, msg, isGroup, "没有有效的搜索结果，先发 /点歌 关键词 搜索一下吧")
+		return
+	}
+	if page == sess.page {
+		p.replyText(b, msg, isGroup, fmt.Sprintf("已经在第 %d 页了", page))
+		return
+	}
+	p.doSearchPage(ctx, b, msg, isGroup, sess.source, sess.keyword, page)
+}
+
+// musicAction 解析后的子命令：kind 为 help/search/pick/lyric/next/prev/page。
 type musicAction struct {
 	kind    string
 	keyword string
-	index   int // pick/lyric 用，1 起
+	index   int // pick/lyric/page 用，1 起
 }
 
 // parseMusicArgs 解析参数：无参/help → 帮助；纯数字或 选 N → 点播；
-// 歌词 N → 查歌词；其余整体作为搜索关键词。
+// 歌词 N → 查歌词；下一页/上一页/页 N → 翻页；其余整体作为搜索关键词。
 func parseMusicArgs(args []string) musicAction {
 	if len(args) == 0 {
 		return musicAction{kind: "help"}
@@ -220,6 +263,15 @@ func parseMusicArgs(args []string) musicAction {
 			return musicAction{kind: "lyric", index: n}
 		}
 		return musicAction{kind: "lyric"}
+	case "下一页", "下页", "next":
+		return musicAction{kind: "next"}
+	case "上一页", "上页", "prev":
+		return musicAction{kind: "prev"}
+	case "页", "page":
+		if n, ok := parseIndex(rest); ok {
+			return musicAction{kind: "page", index: n}
+		}
+		return musicAction{kind: "page"}
 	case "选", "播放", "点", "play":
 		if n, ok := parseIndex(rest); ok {
 			return musicAction{kind: "pick", index: n}
@@ -294,36 +346,40 @@ func (p *MusicPlugin) takeCooldown(key string) (bool, time.Duration) {
 	return true, 0
 }
 
-// doSearch 关键字搜索并回复候选列表，同时记入选歌会话。
-func (p *MusicPlugin) doSearch(ctx context.Context, b bot.Bot, msg message.Message, isGroup bool, keyword string) {
+// doSearchPage 按页搜索并回复候选列表，同时记入选歌会话；空页时保留原会话。
+func (p *MusicPlugin) doSearchPage(ctx context.Context, b bot.Bot, msg message.Message, isGroup bool, source, keyword string, page int) {
 	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	tracks, err := p.client.searchSongs(sctx, p.cfg.Source, keyword, p.cfg.SearchCount)
+	tracks, err := p.client.searchSongs(sctx, source, keyword, p.cfg.SearchCount, page)
 	if err != nil {
-		p.Logger.Warn("点歌搜索失败", "error", err, "keyword", keyword, "user", msg.Sender.UserId)
+		p.Logger.Warn("点歌搜索失败", "error", err, "keyword", keyword, "page", page, "user", msg.Sender.UserId)
 		p.replyText(b, msg, isGroup, "搜索失败了："+err.Error())
 		return
 	}
 	if len(tracks) == 0 {
+		if page > 1 {
+			p.replyText(b, msg, isGroup, fmt.Sprintf("第 %d 页没有更多结果了，回复 /点歌 上一页 回看", page))
+			return
+		}
 		p.replyText(b, msg, isGroup, fmt.Sprintf("没找到 %q 相关的歌曲，换个关键词试试？", keyword))
 		return
 	}
-	if len(tracks) > p.cfg.MaxResults {
-		tracks = tracks[:p.cfg.MaxResults]
-	}
-	p.storeSession(msg, keyword, tracks)
+	p.storeSession(msg, source, keyword, page, tracks)
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "🎵 为你找到 %q 的候选，回复 /点歌 序号 播放、/点歌 歌词 序号 看歌词（%d 分钟内有效）：\n", keyword, p.cfg.SessionMin)
+	fmt.Fprintf(&sb, "🎵 为你找到 %q 的候选（第 %d 页），回复 /点歌 序号 下载、/点歌 歌词 序号 看歌词（%d 分钟内有效）：\n", keyword, page, p.cfg.SessionMin)
 	for i, t := range tracks {
 		fmt.Fprintf(&sb, "%d. %s\n", i+1, trackLine(t))
 	}
+	if len(tracks) >= p.cfg.SearchCount { // 整页结果大概率还有下一页
+		sb.WriteString("回复 /点歌 下一页 看更多\n")
+	}
 	sb.WriteString(creditLine)
 	p.replyText(b, msg, isGroup, sb.String())
-	p.Logger.Info("点歌搜索完成", "keyword", keyword, "source", p.cfg.Source, "results", len(tracks), "user", msg.Sender.UserId, "is_group", isGroup)
+	p.Logger.Info("点歌搜索完成", "keyword", keyword, "source", source, "page", page, "results", len(tracks), "user", msg.Sender.UserId, "is_group", isGroup)
 }
 
 // storeSession 保存选歌会话，顺手清理过期会话。
-func (p *MusicPlugin) storeSession(msg message.Message, keyword string, tracks []*track) {
+func (p *MusicPlugin) storeSession(msg message.Message, source, keyword string, page int, tracks []*track) {
 	exp := time.Duration(p.cfg.SessionMin) * time.Minute
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -335,7 +391,8 @@ func (p *MusicPlugin) storeSession(msg message.Message, keyword string, tracks [
 	}
 	p.sessions[sessionKey(msg)] = &searchSession{
 		keyword:   keyword,
-		source:    p.cfg.Source,
+		source:    source,
+		page:      page,
 		tracks:    tracks,
 		createdAt: now,
 	}
@@ -604,6 +661,9 @@ func (p *MusicPlugin) replyText(b bot.Bot, msg message.Message, isGroup bool, te
 func helpText(sessionMin int) string {
 	return fmt.Sprintf(`🎵 音乐点歌
 /点歌 关键词      搜索歌曲（歌名/歌手/专辑）
+/点歌 下一页      看下一页结果
+/点歌 上一页      回看上一页
+/点歌 页 页码     跳到指定页
 /点歌 序号        下载列表中的歌曲并发送文件（%d 分钟内有效）
 /点歌 选 序号     同上
 /点歌 歌词 序号   查看歌词

@@ -13,8 +13,7 @@ type musicConfig struct {
 	MaxSizeMB int `cfg:"plugin.music.max_size_mb" label:"下载上限(MB)" group:"音乐" default:"20" help:"点播下载的音频大小上限，超过则改为发送播放链接；无损音质通常 30~80MB，需要无损请调大，0 为不限制"`
 	DownloadTimeoutSec int `cfg:"plugin.music.download_timeout_sec" label:"下载超时(秒)" group:"音乐" default:"180" help:"下载音频的超时时间，30~600 秒"`
 
-	SearchCount int `cfg:"plugin.music.search_count" label:"搜索条数" group:"音乐" default:"10" help:"每次向 API 请求的候选数量，1~30"`
-	MaxResults  int `cfg:"plugin.music.max_results" label:"列表展示条数" group:"音乐" default:"8" help:"搜索结果列表最多展示几条，1~20，超出部分忽略"`
+	SearchCount int `cfg:"plugin.music.search_count" label:"每页条数" group:"音乐" default:"10" help:"每次搜索返回的候选数量（1~30），也是翻页的页大小；整页结果时提示可翻页"`
 
 	SessionMin  int `cfg:"plugin.music.session_min" label:"选歌有效期(分钟)" group:"音乐" default:"10" help:"搜索结果列表的有效期，过期后需要重新搜索"`
 	CooldownSec int `cfg:"plugin.music.cooldown_sec" label:"搜索冷却(秒)" group:"音乐" default:"15" help:"同一用户两次搜索的最小间隔，0 表示不限制；点播/歌词只受全局配额约束"`

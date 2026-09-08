@@ -27,6 +27,12 @@ func TestParseMusicArgs(t *testing.T) {
 		{"词带序号", []string{"词", "1"}, musicAction{kind: "lyric", index: 1}},
 		{"歌词缺序号", []string{"歌词"}, musicAction{kind: "lyric"}},
 		{"英文lyric", []string{"lyric", "1"}, musicAction{kind: "lyric", index: 1}},
+		{"下一页", []string{"下一页"}, musicAction{kind: "next"}},
+		{"下页别名", []string{"下页"}, musicAction{kind: "next"}},
+		{"上一页", []string{"上一页"}, musicAction{kind: "prev"}},
+		{"跳页", []string{"页", "3"}, musicAction{kind: "page", index: 3}},
+		{"英文page", []string{"page", "2"}, musicAction{kind: "page", index: 2}},
+		{"跳页缺页码", []string{"page"}, musicAction{kind: "page"}},
 		{"序号非法当关键词", []string{"第3首"}, musicAction{kind: "search", keyword: "第3首"}},
 	}
 	for _, tc := range cases {
@@ -235,7 +241,7 @@ func TestRateLimiter(t *testing.T) {
 
 func TestHelpText(t *testing.T) {
 	s := helpText(10)
-	for _, want := range []string{"/点歌 关键词", "/点歌 序号", "/点歌 歌词 序号", creditLine} {
+	for _, want := range []string{"/点歌 关键词", "/点歌 下一页", "/点歌 序号", "/点歌 歌词 序号", creditLine} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("帮助文本缺少 %q:\n%s", want, s)
 		}

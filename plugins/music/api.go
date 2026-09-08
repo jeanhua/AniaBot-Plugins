@@ -94,14 +94,17 @@ func (t *track) artistLine() string {
 	return strings.Join(t.Artist, "/")
 }
 
-// searchSongs 关键字搜索，支持歌名、歌手、专辑名。
-func (c *gdMusicClient) searchSongs(ctx context.Context, source, keyword string, count int) ([]*track, error) {
+// searchSongs 关键字搜索，支持歌名、歌手、专辑名；page 从 1 起。
+func (c *gdMusicClient) searchSongs(ctx context.Context, source, keyword string, count, page int) ([]*track, error) {
+	if page < 1 {
+		page = 1
+	}
 	body, err := c.fetch(ctx, map[string]string{
 		"types":  "search",
 		"source": source,
 		"name":   keyword,
 		"count":  strconv.Itoa(count),
-		"pages":  "1",
+		"pages":  strconv.Itoa(page),
 	})
 	if err != nil {
 		return nil, err
