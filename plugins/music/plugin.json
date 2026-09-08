@@ -1,0 +1,15 @@
+{
+  "id": "music",
+  "name": "音乐点歌",
+  "description": "群聊@我或私聊 /点歌 关键词 搜歌点播，支持多音源、歌词查询、QQ 音乐卡片与封面展示（数据来自 GD音乐台开放 API）",
+  "author": "jeanhua",
+  "version": "1.0.0",
+  "platforms": ["qq", "feishu", "telegram", "discord", "qqofficial"],
+  "tags": ["娱乐", "音乐"],
+  "api_version": 1,
+  "min_framework": "4.6.0",
+  "entry": {
+    "constructor": "NewPlugin"
+  },
+  "icon": ""
+}
