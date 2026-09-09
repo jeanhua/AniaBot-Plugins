@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jeanhua/AniaBot/common/model/message"
 )
 
 func TestParseMusicArgs(t *testing.T) {
@@ -300,5 +302,33 @@ func TestParsePickPayload(t *testing.T) {
 	}
 	if _, ok := parsePickPayload("pick:x"); ok {
 		t.Fatal("非数字不合法")
+	}
+}
+
+// TestPickInflight 点播进行中标记：同键互斥（防连点/多人同点重复发送），
+// 不同会话/音源/曲目互不影响，释放后可再次点播。
+func TestPickInflight(t *testing.T) {
+	p := NewPlugin()
+	tr := &track{ID: flexStr("186016"), Name: "晴天"}
+	key := pickInflightKey(message.FromString("12345"), "netease", tr)
+	if !p.tryAcquirePick(key) {
+		t.Fatal("首次标记应成功")
+	}
+	if p.tryAcquirePick(key) {
+		t.Fatal("同键重复标记应失败")
+	}
+	if !p.tryAcquirePick(pickInflightKey(message.FromString("67890"), "netease", tr)) {
+		t.Fatal("不同会话同曲目应不受影响")
+	}
+	if !p.tryAcquirePick(pickInflightKey(message.FromString("12345"), "joox", tr)) {
+		t.Fatal("同会话不同音源应不受影响")
+	}
+	other := &track{ID: flexStr("8812"), Name: "Lemon"}
+	if !p.tryAcquirePick(pickInflightKey(message.FromString("12345"), "netease", other)) {
+		t.Fatal("同会话不同曲目应不受影响")
+	}
+	p.releasePick(key)
+	if !p.tryAcquirePick(key) {
+		t.Fatal("释放后应可重新标记")
 	}
 }

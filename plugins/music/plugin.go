@@ -41,10 +41,11 @@ type MusicPlugin struct {
 	client *gdMusicClient
 
 	mu       sync.Mutex
-	sessions map[string]*searchSession    // 选歌会话：key = 用户|场景
+	sessions map[string]*searchSession      // 选歌会话：key = 用户|场景
 	byMsg    map[message.QID]*searchSession // 列表消息 ID → 会话（按钮点击路由）
-	cooldown map[string]time.Time         // 个人搜索冷却
-	limiter  *rateLimiter                 // 全局 API 频率保护（官方 50 次/5 分钟）
+	cooldown map[string]time.Time           // 个人搜索冷却
+	inflight map[string]time.Time           // 进行中的点播（防连点/多人同点重复发送）
+	limiter  *rateLimiter                   // 全局 API 频率保护（官方 50 次/5 分钟）
 }
 
 // searchSession 一次搜索的候选缓存（单页），供序号点歌/查歌词与翻页。
@@ -68,13 +69,14 @@ func NewPlugin() *MusicPlugin {
 		sessions: make(map[string]*searchSession),
 		byMsg:    make(map[message.QID]*searchSession),
 		cooldown: make(map[string]time.Time),
+		inflight: make(map[string]time.Time),
 	}
 	p.Name = "音乐点歌"
 	p.HelpWords = "at 我发送 /点歌 关键词 搜歌，支持按钮的平台点序号直接下载、按钮翻页，/点歌 歌词 序号 看歌词"
 	p.AdminOnly = false
 	p.ShowFor = plugininfo.ShowForGroup | plugininfo.ShowForFriend
 	p.Author = "jeanhua"
-	p.Version = "1.3.0"
+	p.Version = "1.4.0"
 	p.Order = plugin.LevelNormal
 	return p
 }
@@ -89,6 +91,9 @@ func (p *MusicPlugin) Start(ctx context.Context, cfg *viper.Viper) error {
 	}
 	if p.cooldown == nil {
 		p.cooldown = make(map[string]time.Time)
+	}
+	if p.inflight == nil {
+		p.inflight = make(map[string]time.Time)
 	}
 	if strings.TrimSpace(p.cfg.APIBase) == "" {
 		p.cfg.APIBase = defaultAPIBase
@@ -209,9 +214,6 @@ func (p *MusicPlugin) handleMusic(ctx context.Context, b bot.Bot, cmd command.Co
 		}
 		p.jumpPage(ctx, b, msg, isGroup, act.index)
 	case "pick":
-		if !p.passAPIQuota(b, msg, isGroup) {
-			return
-		}
 		p.doPick(ctx, b, msg, isGroup, act.index)
 	case "lyric":
 		if act.index <= 0 {
@@ -358,6 +360,43 @@ func (p *MusicPlugin) takeCooldown(key string) (bool, time.Duration) {
 	}
 	p.cooldown[key] = now
 	return true, 0
+}
+
+// inflightMaxAge 点播进行中标记的最长保留：大于最大下载超时（600 秒），
+// 投递协程异常终止后标记也能自然过期，不会把点播永久卡死。
+const inflightMaxAge = 15 * time.Minute
+
+// pickInflightKey 点播去重键：会话（群/私聊）+ 音源 + 曲目 ID。
+// 同一会话同一首歌同时只投递一次，不同会话/不同曲目互不影响。
+func pickInflightKey(chat message.QID, source string, t *track) string {
+	return chat.String() + "|pick|" + source + "|" + t.ID.String()
+}
+
+// tryAcquirePick 标记一次点播进入投递中；同键已有任务在途返回 false，
+// 用于防按钮连点/重复指令导致的重复下载与重复发送。
+func (p *MusicPlugin) tryAcquirePick(key string) bool {
+	now := time.Now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.inflight) > 1024 { // 防长期运行膨胀：顺手清理过期标记
+		for k, t0 := range p.inflight {
+			if now.Sub(t0) > inflightMaxAge {
+				delete(p.inflight, k)
+			}
+		}
+	}
+	if _, busy := p.inflight[key]; busy {
+		return false
+	}
+	p.inflight[key] = now
+	return true
+}
+
+// releasePick 释放点播进行中标记（投递结束后调用）。
+func (p *MusicPlugin) releasePick(key string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.inflight, key)
 }
 
 // doSearchPage 按页搜索并回复候选列表，同时记入选歌会话；空页时保留原会话。
@@ -625,22 +664,31 @@ func (p *MusicPlugin) onPageInteraction(ctx context.Context, b bot.Bot, ev *mess
 }
 
 // onPickInteraction 序号点播：先快速应答（toast 提示，回调应答必须及时返回，
-// 长下载放 OnInteraction 里会拖到应答失效），下载投递在后台协程进行，
-// 完成后把文件/卡片/直链直接发到会话。
+// 长下载放 OnInteraction 里会拖到应答失效），下载投递在后台协程进行。
+// 去重放在配额消费之前，连点不白烧配额；toast 转瞬即逝且仅点击者可见，
+// 后台会再往会话发一条「正在发送」提示，让群里有明确动静、其他人也不再重复点。
 func (p *MusicPlugin) onPickInteraction(b bot.Bot, ev *message.InteractionEvent, sess *searchSession, index int) {
 	if index < 1 || index > len(sess.tracks) {
 		ev.AnswerText = fmt.Sprintf("序号超出范围（1~%d），列表可能已更新，看最新列表再选吧", len(sess.tracks))
 		return
 	}
-	if ok, wait := p.limiter.allow(); !ok {
-		ev.AnswerText = fmt.Sprintf("点歌配额用完了（每 5 分钟限 %d 次），约 %s 后再试", p.cfg.RateLimit5Min, humanDur(wait))
-		return
-	}
 	// 快照后即与会话对象解耦（copy-on-write：会话可能被并发翻页替换）
 	s := *sess
 	t := s.tracks[index-1]
+	key := pickInflightKey(s.chat, s.source, t)
+	if !p.tryAcquirePick(key) {
+		ev.AnswerText = fmt.Sprintf("《%s》正在发送中，请稍候，不要重复点击哦", truncate(t.Name, 30))
+		return
+	}
+	if ok, wait := p.limiter.allow(); !ok {
+		p.releasePick(key)
+		ev.AnswerText = fmt.Sprintf("点歌配额用完了（每 5 分钟限 %d 次），约 %s 后再试", p.cfg.RateLimit5Min, humanDur(wait))
+		return
+	}
 	ev.AnswerText = fmt.Sprintf("🎵 正在获取《%s》，稍等…", truncate(t.Name, 30))
 	b.Go("music-pick", func() {
+		defer p.releasePick(key)
+		p.sendPlain(b, s.isGroup, s.chat, fmt.Sprintf("🎵 正在发送《%s》，请稍候…", truncate(t.Name, 30)))
 		p.deliverPick(context.Background(), b, s.isGroup, s.chat, s.source, t, func(text string) {
 			p.sendPlain(b, s.isGroup, s.chat, text)
 		}, ev.UserId)
@@ -714,15 +762,30 @@ func sessionKey(msg message.Message) string {
 }
 
 // doPick 点播（文本指令）：默认下载音频以文件发送；card 模式发音乐卡片
-// （失败降级为文件）；text 模式只发播放链接。
+// （失败降级为文件）；text 模式只发播放链接。先回一条「正在发送」提示——
+// 大文件下载动辄十几秒，没动静容易被当成没反应而反复发指令。
 func (p *MusicPlugin) doPick(ctx context.Context, b bot.Bot, msg message.Message, isGroup bool, index int) {
 	sess, ok := p.currentSession(msg)
 	if !ok {
 		p.replyText(b, msg, isGroup, fmt.Sprintf("没有有效的选歌列表，先发 /点歌 关键词 搜索一下吧"))
 		return
 	}
-	chat := pickChat(msg)
-	p.deliverPick(ctx, b, isGroup, chat, sess.source, sessTrack(sess, index), func(text string) {
+	t := sessTrack(sess, index)
+	if t == nil {
+		p.replyText(b, msg, isGroup, fmt.Sprintf("序号超出范围（1~%d），看下列表再选吧", len(sess.tracks)))
+		return
+	}
+	key := pickInflightKey(pickChat(msg), sess.source, t)
+	if !p.tryAcquirePick(key) {
+		p.replyText(b, msg, isGroup, fmt.Sprintf("《%s》正在发送中，请稍候，不要重复点播哦", truncate(t.Name, 30)))
+		return
+	}
+	defer p.releasePick(key)
+	if !p.passAPIQuota(b, msg, isGroup) {
+		return
+	}
+	p.replyText(b, msg, isGroup, fmt.Sprintf("🎵 正在发送《%s》，请稍候…", truncate(t.Name, 30)))
+	p.deliverPick(ctx, b, isGroup, pickChat(msg), sess.source, t, func(text string) {
 		p.replyText(b, msg, isGroup, text)
 	}, msg.Sender.UserId)
 }
