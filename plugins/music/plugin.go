@@ -1,5 +1,6 @@
 // Package music 是插件市场的音乐点歌插件：基于 GD音乐台(music.gdstudio.xyz) 开放 API
-// 搜索与点播歌曲，支持多音源、歌词查询，QQ 平台以自定义音乐卡片发送。
+// 搜索与点播歌曲，支持多音源、歌词查询，QQ 平台以自定义音乐卡片发送；
+// 支持内联按钮的平台（如 Telegram）列表附带翻页按钮，点击就地翻页。
 package music
 
 import (
@@ -31,6 +32,8 @@ const (
 )
 
 // MusicPlugin 音乐点歌插件：搜索 → 序号点播 → 音乐卡片/链接 + 歌词。
+// 支持按钮翻页的平台（Telegram 等，断言 bot.Interactive 探测）列表附带
+// 翻页按钮，点击就地翻页，无需重复输入指令。
 type MusicPlugin struct {
 	plugin.Meta
 	cfg musicConfig
@@ -38,17 +41,24 @@ type MusicPlugin struct {
 	client *gdMusicClient
 
 	mu       sync.Mutex
-	sessions map[string]*searchSession // 选歌会话：key = 用户|场景
-	cooldown map[string]time.Time      // 个人搜索冷却
-	limiter  *rateLimiter              // 全局 API 频率保护（官方 50 次/5 分钟）
+	sessions map[string]*searchSession    // 选歌会话：key = 用户|场景
+	byMsg    map[message.QID]*searchSession // 列表消息 ID → 会话（按钮点击路由）
+	cooldown map[string]time.Time         // 个人搜索冷却
+	limiter  *rateLimiter                 // 全局 API 频率保护（官方 50 次/5 分钟）
 }
 
 // searchSession 一次搜索的候选缓存（单页），供序号点歌/查歌词与翻页。
+// 按钮翻页时以新对象整体替换（copy-on-write），避免与点播/歌词的并发读取
+// 产生数据竞争，调用方不应原地修改字段。
 type searchSession struct {
+	key       string // 会话键（用户|场景），翻页替换时定位 sessions 表项
 	keyword   string
 	source    string // 会话创建时的音源，点播/歌词/翻页按它请求，避免改配置后 id 对不上
 	page      int    // 当前页码，从 1 起
 	tracks    []*track
+	listMsg   message.QID // 按钮模式下列表消息 ID（翻页时就地编辑；文本模式为空）
+	isGroup   bool
+	chat      message.QID // 群聊为群 ID，私聊为发送者 ID（编辑失败补发用）
 	createdAt time.Time
 }
 
@@ -56,14 +66,15 @@ type searchSession struct {
 func NewPlugin() *MusicPlugin {
 	p := &MusicPlugin{
 		sessions: make(map[string]*searchSession),
+		byMsg:    make(map[message.QID]*searchSession),
 		cooldown: make(map[string]time.Time),
 	}
 	p.Name = "音乐点歌"
-	p.HelpWords = "at 我发送 /点歌 关键词 搜歌，/点歌 下一页 翻页，/点歌 序号 下载歌曲发文件，/点歌 歌词 序号 看歌词"
+	p.HelpWords = "at 我发送 /点歌 关键词 搜歌，支持按钮/指令翻页，/点歌 序号 下载歌曲发文件，/点歌 歌词 序号 看歌词"
 	p.AdminOnly = false
 	p.ShowFor = plugininfo.ShowForGroup | plugininfo.ShowForFriend
 	p.Author = "jeanhua"
-	p.Version = "1.1.0"
+	p.Version = "1.2.0"
 	p.Order = plugin.LevelNormal
 	return p
 }
@@ -72,6 +83,9 @@ func NewPlugin() *MusicPlugin {
 func (p *MusicPlugin) Start(ctx context.Context, cfg *viper.Viper) error {
 	if p.sessions == nil {
 		p.sessions = make(map[string]*searchSession)
+	}
+	if p.byMsg == nil {
+		p.byMsg = make(map[message.QID]*searchSession)
 	}
 	if p.cooldown == nil {
 		p.cooldown = make(map[string]time.Time)
@@ -347,6 +361,7 @@ func (p *MusicPlugin) takeCooldown(key string) (bool, time.Duration) {
 }
 
 // doSearchPage 按页搜索并回复候选列表，同时记入选歌会话；空页时保留原会话。
+// 支持按钮的平台列表附翻页按钮（点击就地翻页），其余提示文本指令翻页。
 func (p *MusicPlugin) doSearchPage(ctx context.Context, b bot.Bot, msg message.Message, isGroup bool, source, keyword string, page int) {
 	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -364,38 +379,254 @@ func (p *MusicPlugin) doSearchPage(ctx context.Context, b bot.Bot, msg message.M
 		p.replyText(b, msg, isGroup, fmt.Sprintf("没找到 %q 相关的歌曲，换个关键词试试？", keyword))
 		return
 	}
-	p.storeSession(msg, source, keyword, page, tracks)
+	sess := p.storeSession(msg, source, keyword, page, tracks)
+	if p.keyboardSupported(b) {
+		if msgId := p.sendList(b, sess, msg.MessageId); msgId != "" {
+			p.Logger.Info("点歌搜索完成", "keyword", keyword, "source", source, "page", page, "results", len(tracks), "user", msg.Sender.UserId, "is_group", isGroup, "mode", "button")
+			return
+		}
+		// 按钮列表发送失败 → 降级为纯文本
+	}
+	p.replyText(b, msg, isGroup, p.buildListText(sess, false))
+	p.Logger.Info("点歌搜索完成", "keyword", keyword, "source", source, "page", page, "results", len(tracks), "user", msg.Sender.UserId, "is_group", isGroup, "mode", "text")
+}
+
+// keyboardSupported 事件来源平台是否支持内联按钮；不支持时退化为文本指令交互。
+func (p *MusicPlugin) keyboardSupported(b bot.Bot) bool {
+	iv, ok := b.(bot.Interactive)
+	return ok && iv.SupportsKeyboard()
+}
+
+// buildListText 组装列表文案：interactive 时提示按钮翻页（无按钮可翻时不提），
+// 文本模式提示指令翻页。
+func (p *MusicPlugin) buildListText(sess *searchSession, interactive bool) string {
+	hasButtons := sess.page > 1 || len(sess.tracks) >= p.cfg.SearchCount
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "🎵 为你找到 %q 的候选（第 %d 页），回复 /点歌 序号 下载、/点歌 歌词 序号 看歌词（%d 分钟内有效）：\n", keyword, page, p.cfg.SessionMin)
-	for i, t := range tracks {
+	fmt.Fprintf(&sb, "🎵 为你找到 %q 的候选（第 %d 页）", sess.keyword, sess.page)
+	if interactive && hasButtons {
+		sb.WriteString("，点下方按钮翻页")
+	}
+	fmt.Fprintf(&sb, "，回复 /点歌 序号 下载、/点歌 歌词 序号 看歌词（%d 分钟内有效）：\n", p.cfg.SessionMin)
+	for i, t := range sess.tracks {
 		fmt.Fprintf(&sb, "%d. %s\n", i+1, trackLine(t))
 	}
-	if len(tracks) >= p.cfg.SearchCount { // 整页结果大概率还有下一页
+	if !interactive && len(sess.tracks) >= p.cfg.SearchCount { // 整页结果大概率还有下一页
 		sb.WriteString("回复 /点歌 下一页 看更多\n")
 	}
 	sb.WriteString(creditLine)
-	p.replyText(b, msg, isGroup, sb.String())
-	p.Logger.Info("点歌搜索完成", "keyword", keyword, "source", source, "page", page, "results", len(tracks), "user", msg.Sender.UserId, "is_group", isGroup)
+	return sb.String()
 }
 
-// storeSession 保存选歌会话，顺手清理过期会话。
-func (p *MusicPlugin) storeSession(msg message.Message, source, keyword string, page int, tracks []*track) {
+// paginationRows 翻页按钮行：有上一页/下一页才出现对应按钮；回调数据为
+// 目标页码（Meta.CallbackData 打包插件前缀，框架按前缀路由回本插件）。
+func (p *MusicPlugin) paginationRows(sess *searchSession) [][]message.InlineButton {
+	var row []message.InlineButton
+	if sess.page > 1 {
+		row = append(row, msgchain.Button("◀️ 上一页", p.CallbackData("pg:"+strconv.Itoa(sess.page-1))))
+	}
+	if len(sess.tracks) >= p.cfg.SearchCount {
+		row = append(row, msgchain.Button("▶️ 下一页", p.CallbackData("pg:"+strconv.Itoa(sess.page+1))))
+	}
+	if len(row) == 0 {
+		return nil
+	}
+	return [][]message.InlineButton{row}
+}
+
+// sendList 发送带翻页按钮的列表消息（群聊回复原指令），列表消息 ID 经
+// bindListMsg 记入会话供按钮点击路由与就地编辑；返回消息 ID，发送失败返回空。
+func (p *MusicPlugin) sendList(b bot.Bot, sess *searchSession, replyTo message.QID) message.QID {
+	text := p.buildListText(sess, true)
+	rows := p.paginationRows(sess)
+	var msgId message.QID
+	var ok bool
+	if sess.isGroup {
+		gb := msgchain.Builder().Group()
+		if replyTo != "" {
+			gb = gb.Reply(replyTo)
+		}
+		gb = gb.Text(text)
+		if len(rows) > 0 {
+			gb = gb.Keyboard(rows...)
+		}
+		msgId, ok = b.SendGroupMsg(sess.chat, gb.Build())
+	} else {
+		fb := msgchain.Builder().Friend().Text(text)
+		if len(rows) > 0 {
+			fb = fb.Keyboard(rows...)
+		}
+		msgId, ok = b.SendFriendMsg(sess.chat, fb.Build())
+	}
+	if !ok {
+		p.Logger.Warn("按钮列表发送失败", "chat", sess.chat, "is_group", sess.isGroup)
+		return ""
+	}
+	p.bindListMsg(sess, msgId)
+	return msgId
+}
+
+// storeSession 保存选歌会话（返回会话指针，供发送列表后 bindListMsg 关联
+// 列表消息），顺手清理过期会话与失效列表消息的按钮索引。
+func (p *MusicPlugin) storeSession(msg message.Message, source, keyword string, page int, tracks []*track) *searchSession {
 	exp := time.Duration(p.cfg.SessionMin) * time.Minute
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	now := time.Now()
 	for k, s := range p.sessions {
 		if now.Sub(s.createdAt) > exp {
-			delete(p.sessions, k)
+			p.removeLocked(k, s)
 		}
 	}
-	p.sessions[sessionKey(msg)] = &searchSession{
+	key := sessionKey(msg)
+	if old, ok := p.sessions[key]; ok {
+		p.removeLocked(key, old) // 同用户重新搜索：旧列表消息的按钮索引一并移除
+	}
+	sess := &searchSession{
+		key:       key,
 		keyword:   keyword,
 		source:    source,
 		page:      page,
 		tracks:    tracks,
+		isGroup:   msg.GroupId != "",
+		chat:      msg.GroupId,
 		createdAt: now,
 	}
+	if sess.chat == "" {
+		sess.chat = msg.Sender.UserId
+	}
+	p.sessions[key] = sess
+	return sess
+}
+
+// updateSessionPage 按钮翻页后以新会话对象原子替换 sessions/按钮索引表项
+// （copy-on-write，见 searchSession 注释），返回新对象。
+func (p *MusicPlugin) updateSessionPage(sess *searchSession, page int, tracks []*track) *searchSession {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	updated := *sess
+	updated.page = page
+	updated.tracks = tracks
+	updated.createdAt = time.Now()
+	p.sessions[updated.key] = &updated
+	if updated.listMsg != "" {
+		p.byMsg[updated.listMsg] = &updated // 点击索引跟随新对象
+	}
+	return &updated
+}
+
+// removeLocked 删除会话并移除其列表消息的按钮索引（需持有 p.mu）。
+func (p *MusicPlugin) removeLocked(key string, s *searchSession) {
+	delete(p.sessions, key)
+	if s.listMsg != "" && p.byMsg[s.listMsg] == s {
+		delete(p.byMsg, s.listMsg)
+	}
+}
+
+// bindListMsg 记录列表消息 ID：翻页就地编辑 + 按钮点击路由索引。
+func (p *MusicPlugin) bindListMsg(sess *searchSession, msgId message.QID) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if sess.listMsg != "" && p.byMsg[sess.listMsg] == sess {
+		delete(p.byMsg, sess.listMsg) // 会话已换新列表消息，旧按钮作废
+	}
+	sess.listMsg = msgId
+	p.byMsg[msgId] = sess
+}
+
+// sessionByMsg 按列表消息 ID 取会话（按钮点击路由），过期或不存在返回 nil。
+func (p *MusicPlugin) sessionByMsg(msgId message.QID) *searchSession {
+	exp := time.Duration(p.cfg.SessionMin) * time.Minute
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	s, ok := p.byMsg[msgId]
+	if !ok || time.Since(s.createdAt) > exp {
+		return nil
+	}
+	return s
+}
+
+// OnInteraction 内联按钮点击（plugin.InteractionHandler）：翻页载荷
+// "pg:<页码>" → 沿会话关键词与音源搜索，就地编辑列表消息（编辑失败降级为
+// 补发新列表）。群内任何人可点按钮翻页（列表卡片共享）；API 配额与文本
+// 翻页共用全局限流，超限时以应答文本提示。
+func (p *MusicPlugin) OnInteraction(ctx context.Context, b bot.Bot, ev *message.InteractionEvent) error {
+	if !p.cfg.Enable {
+		return nil
+	}
+	page, ok := parsePagePayload(ev.Data)
+	if !ok {
+		return nil
+	}
+	sess := p.sessionByMsg(ev.MessageId)
+	if sess == nil {
+		ev.AnswerText = "选歌会话已过期，请重新搜索"
+		return nil
+	}
+	if page == sess.page {
+		ev.AnswerText = fmt.Sprintf("已经在第 %d 页了", page)
+		return nil
+	}
+	if ok, wait := p.limiter.allow(); !ok {
+		ev.AnswerText = fmt.Sprintf("点歌配额用完了（每 5 分钟限 %d 次），约 %s 后再试", p.cfg.RateLimit5Min, humanDur(wait))
+		return nil
+	}
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	tracks, err := p.client.searchSongs(sctx, sess.source, sess.keyword, p.cfg.SearchCount, page)
+	if err != nil {
+		p.Logger.Warn("按钮翻页搜索失败", "error", err, "keyword", sess.keyword, "page", page)
+		ev.AnswerText = "搜索失败了：" + err.Error()
+		return nil
+	}
+	if len(tracks) == 0 {
+		ev.AnswerText = fmt.Sprintf("第 %d 页没有更多结果了", page)
+		return nil
+	}
+	sess = p.updateSessionPage(sess, page, tracks)
+	listMsg, isGroup := sess.listMsg, sess.isGroup
+	ev.AnswerText = fmt.Sprintf("已翻到第 %d 页", page)
+	if !p.editListPage(b, listMsg, isGroup, sess) {
+		// 就地编辑失败（消息过旧/平台限制等）→ 补发一条带按钮的新列表
+		p.sendList(b, sess, "")
+	}
+	p.Logger.Info("按钮翻页完成", "keyword", sess.keyword, "page", page, "user", ev.UserId, "is_group", isGroup)
+	return nil
+}
+
+// parsePagePayload 解析翻页按钮回调载荷 "pg:<页码>"。
+func parsePagePayload(data string) (int, bool) {
+	payload, ok := strings.CutPrefix(data, "pg:")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(payload)
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
+}
+
+// editListPage 就地编辑列表消息的文案与翻页按钮；不支持编辑或编辑失败
+// 返回 false 由调用方降级。
+func (p *MusicPlugin) editListPage(b bot.Bot, msgId message.QID, isGroup bool, sess *searchSession) bool {
+	ed, ok := b.(bot.MsgEditor)
+	if !ok || msgId == "" {
+		return false
+	}
+	text := p.buildListText(sess, true)
+	rows := p.paginationRows(sess)
+	if isGroup {
+		gb := msgchain.Builder().Group().Text(text)
+		if len(rows) > 0 {
+			gb = gb.Keyboard(rows...)
+		}
+		return ed.EditGroupMsg(msgId, gb.Build())
+	}
+	fb := msgchain.Builder().Friend().Text(text)
+	if len(rows) > 0 {
+		fb = fb.Keyboard(rows...)
+	}
+	return ed.EditFriendMsg(msgId, fb.Build())
 }
 
 // currentSession 取当前会话，过期或不存在返回 false。
@@ -668,6 +899,7 @@ func helpText(sessionMin int) string {
 /点歌 选 序号     同上
 /点歌 歌词 序号   查看歌词
 /点歌 help        查看本帮助
+支持按钮的平台搜索结果可直接点击「上一页/下一页」按钮翻页
 %s，仅供个人学习，请勿商用`, sessionMin, creditLine)
 }
 
