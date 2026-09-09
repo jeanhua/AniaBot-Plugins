@@ -1,6 +1,6 @@
 // Package music 是插件市场的音乐点歌插件：基于 GD音乐台(music.gdstudio.xyz) 开放 API
 // 搜索与点播歌曲，支持多音源、歌词查询，QQ 平台以自定义音乐卡片发送；
-// 支持内联按钮的平台（如 Telegram）列表附带翻页按钮，点击就地翻页。
+// 支持内联按钮的平台（如 Telegram）列表附带序号点播与翻页按钮，点击即用。
 package music
 
 import (
@@ -70,11 +70,11 @@ func NewPlugin() *MusicPlugin {
 		cooldown: make(map[string]time.Time),
 	}
 	p.Name = "音乐点歌"
-	p.HelpWords = "at 我发送 /点歌 关键词 搜歌，支持按钮/指令翻页，/点歌 序号 下载歌曲发文件，/点歌 歌词 序号 看歌词"
+	p.HelpWords = "at 我发送 /点歌 关键词 搜歌，支持按钮的平台点序号直接下载、按钮翻页，/点歌 歌词 序号 看歌词"
 	p.AdminOnly = false
 	p.ShowFor = plugininfo.ShowForGroup | plugininfo.ShowForFriend
 	p.Author = "jeanhua"
-	p.Version = "1.2.0"
+	p.Version = "1.3.0"
 	p.Order = plugin.LevelNormal
 	return p
 }
@@ -397,16 +397,21 @@ func (p *MusicPlugin) keyboardSupported(b bot.Bot) bool {
 	return ok && iv.SupportsKeyboard()
 }
 
-// buildListText 组装列表文案：interactive 时提示按钮翻页（无按钮可翻时不提），
-// 文本模式提示指令翻页。
+// buildListText 组装列表文案：interactive 提示点序号直接下载与按钮翻页，
+// 文本模式提示指令用法。
 func (p *MusicPlugin) buildListText(sess *searchSession, interactive bool) string {
 	hasButtons := sess.page > 1 || len(sess.tracks) >= p.cfg.SearchCount
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "🎵 为你找到 %q 的候选（第 %d 页）", sess.keyword, sess.page)
-	if interactive && hasButtons {
-		sb.WriteString("，点下方按钮翻页")
+	if interactive {
+		sb.WriteString("，点下方序号直接下载")
+		if hasButtons {
+			sb.WriteString("、◀️▶️ 翻页")
+		}
+		fmt.Fprintf(&sb, "，歌词：回复 /点歌 歌词 序号（%d 分钟内有效）：\n", p.cfg.SessionMin)
+	} else {
+		fmt.Fprintf(&sb, "，回复 /点歌 序号 下载、/点歌 歌词 序号 看歌词（%d 分钟内有效）：\n", p.cfg.SessionMin)
 	}
-	fmt.Fprintf(&sb, "，回复 /点歌 序号 下载、/点歌 歌词 序号 看歌词（%d 分钟内有效）：\n", p.cfg.SessionMin)
 	for i, t := range sess.tracks {
 		fmt.Fprintf(&sb, "%d. %s\n", i+1, trackLine(t))
 	}
@@ -417,9 +422,30 @@ func (p *MusicPlugin) buildListText(sess *searchSession, interactive bool) strin
 	return sb.String()
 }
 
-// paginationRows 翻页按钮行：有上一页/下一页才出现对应按钮；回调数据为
-// 目标页码（Meta.CallbackData 打包插件前缀，框架按前缀路由回本插件）。
-func (p *MusicPlugin) paginationRows(sess *searchSession) [][]message.InlineButton {
+// pickColumns 序号点播按钮的每行个数。
+const pickColumns = 5
+
+// keyboardRows 列表键盘：序号点播按钮（每行 5 个，点击直接下载发送）+ 翻页行。
+// 回调数据经 Meta.CallbackData 打包插件前缀，框架按前缀路由回本插件。
+func (p *MusicPlugin) keyboardRows(sess *searchSession) [][]message.InlineButton {
+	var rows [][]message.InlineButton
+	for start := 0; start < len(sess.tracks); start += pickColumns {
+		end := min(start+pickColumns, len(sess.tracks))
+		row := make([]message.InlineButton, 0, end-start)
+		for i := start; i < end; i++ {
+			row = append(row, msgchain.Button(strconv.Itoa(i+1), p.CallbackData("pick:"+strconv.Itoa(i+1))))
+		}
+		rows = append(rows, row)
+	}
+	if row := p.paginationRow(sess); len(row) > 0 {
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// paginationRow 翻页按钮行：有上一页/下一页才出现对应按钮；回调数据为
+// 目标页码。
+func (p *MusicPlugin) paginationRow(sess *searchSession) []message.InlineButton {
 	var row []message.InlineButton
 	if sess.page > 1 {
 		row = append(row, msgchain.Button("◀️ 上一页", p.CallbackData("pg:"+strconv.Itoa(sess.page-1))))
@@ -427,17 +453,14 @@ func (p *MusicPlugin) paginationRows(sess *searchSession) [][]message.InlineButt
 	if len(sess.tracks) >= p.cfg.SearchCount {
 		row = append(row, msgchain.Button("▶️ 下一页", p.CallbackData("pg:"+strconv.Itoa(sess.page+1))))
 	}
-	if len(row) == 0 {
-		return nil
-	}
-	return [][]message.InlineButton{row}
+	return row
 }
 
 // sendList 发送带翻页按钮的列表消息（群聊回复原指令），列表消息 ID 经
 // bindListMsg 记入会话供按钮点击路由与就地编辑；返回消息 ID，发送失败返回空。
 func (p *MusicPlugin) sendList(b bot.Bot, sess *searchSession, replyTo message.QID) message.QID {
 	text := p.buildListText(sess, true)
-	rows := p.paginationRows(sess)
+	rows := p.keyboardRows(sess)
 	var msgId message.QID
 	var ok bool
 	if sess.isGroup {
@@ -545,16 +568,11 @@ func (p *MusicPlugin) sessionByMsg(msgId message.QID) *searchSession {
 	return s
 }
 
-// OnInteraction 内联按钮点击（plugin.InteractionHandler）：翻页载荷
-// "pg:<页码>" → 沿会话关键词与音源搜索，就地编辑列表消息（编辑失败降级为
-// 补发新列表）。群内任何人可点按钮翻页（列表卡片共享）；API 配额与文本
-// 翻页共用全局限流，超限时以应答文本提示。
+// OnInteraction 内联按钮点击（plugin.InteractionHandler）：载荷 "pg:<页码>"
+// 为翻页、"pick:<序号>" 为点播。群内任何人可点（列表卡片共享）；API 配额
+// 与文本指令共用全局限流，超限时以应答文本提示。
 func (p *MusicPlugin) OnInteraction(ctx context.Context, b bot.Bot, ev *message.InteractionEvent) error {
 	if !p.cfg.Enable {
-		return nil
-	}
-	page, ok := parsePagePayload(ev.Data)
-	if !ok {
 		return nil
 	}
 	sess := p.sessionByMsg(ev.MessageId)
@@ -562,13 +580,27 @@ func (p *MusicPlugin) OnInteraction(ctx context.Context, b bot.Bot, ev *message.
 		ev.AnswerText = "选歌会话已过期，请重新搜索"
 		return nil
 	}
+	if page, ok := parsePagePayload(ev.Data); ok {
+		p.onPageInteraction(ctx, b, ev, sess, page)
+		return nil
+	}
+	if index, ok := parsePickPayload(ev.Data); ok {
+		p.onPickInteraction(b, ev, sess, index)
+		return nil
+	}
+	return nil
+}
+
+// onPageInteraction 翻页：沿会话关键词与音源搜索，就地编辑列表消息
+// （编辑失败降级为补发新列表）。
+func (p *MusicPlugin) onPageInteraction(ctx context.Context, b bot.Bot, ev *message.InteractionEvent, sess *searchSession, page int) {
 	if page == sess.page {
 		ev.AnswerText = fmt.Sprintf("已经在第 %d 页了", page)
-		return nil
+		return
 	}
 	if ok, wait := p.limiter.allow(); !ok {
 		ev.AnswerText = fmt.Sprintf("点歌配额用完了（每 5 分钟限 %d 次），约 %s 后再试", p.cfg.RateLimit5Min, humanDur(wait))
-		return nil
+		return
 	}
 	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -576,11 +608,11 @@ func (p *MusicPlugin) OnInteraction(ctx context.Context, b bot.Bot, ev *message.
 	if err != nil {
 		p.Logger.Warn("按钮翻页搜索失败", "error", err, "keyword", sess.keyword, "page", page)
 		ev.AnswerText = "搜索失败了：" + err.Error()
-		return nil
+		return
 	}
 	if len(tracks) == 0 {
 		ev.AnswerText = fmt.Sprintf("第 %d 页没有更多结果了", page)
-		return nil
+		return
 	}
 	sess = p.updateSessionPage(sess, page, tracks)
 	listMsg, isGroup := sess.listMsg, sess.isGroup
@@ -590,12 +622,44 @@ func (p *MusicPlugin) OnInteraction(ctx context.Context, b bot.Bot, ev *message.
 		p.sendList(b, sess, "")
 	}
 	p.Logger.Info("按钮翻页完成", "keyword", sess.keyword, "page", page, "user", ev.UserId, "is_group", isGroup)
-	return nil
+}
+
+// onPickInteraction 序号点播：先快速应答（toast 提示，回调应答必须及时返回，
+// 长下载放 OnInteraction 里会拖到应答失效），下载投递在后台协程进行，
+// 完成后把文件/卡片/直链直接发到会话。
+func (p *MusicPlugin) onPickInteraction(b bot.Bot, ev *message.InteractionEvent, sess *searchSession, index int) {
+	if index < 1 || index > len(sess.tracks) {
+		ev.AnswerText = fmt.Sprintf("序号超出范围（1~%d），列表可能已更新，看最新列表再选吧", len(sess.tracks))
+		return
+	}
+	if ok, wait := p.limiter.allow(); !ok {
+		ev.AnswerText = fmt.Sprintf("点歌配额用完了（每 5 分钟限 %d 次），约 %s 后再试", p.cfg.RateLimit5Min, humanDur(wait))
+		return
+	}
+	// 快照后即与会话对象解耦（copy-on-write：会话可能被并发翻页替换）
+	s := *sess
+	t := s.tracks[index-1]
+	ev.AnswerText = fmt.Sprintf("🎵 正在获取《%s》，稍等…", truncate(t.Name, 30))
+	b.Go("music-pick", func() {
+		p.deliverPick(context.Background(), b, s.isGroup, s.chat, s.source, t, func(text string) {
+			p.sendPlain(b, s.isGroup, s.chat, text)
+		}, ev.UserId)
+	})
 }
 
 // parsePagePayload 解析翻页按钮回调载荷 "pg:<页码>"。
 func parsePagePayload(data string) (int, bool) {
-	payload, ok := strings.CutPrefix(data, "pg:")
+	return parseNumPayload(data, "pg:")
+}
+
+// parsePickPayload 解析点播按钮回调载荷 "pick:<序号>"。
+func parsePickPayload(data string) (int, bool) {
+	return parseNumPayload(data, "pick:")
+}
+
+// parseNumPayload 解析 "<前缀><正整数>" 形式的按钮回调载荷。
+func parseNumPayload(data, prefix string) (int, bool) {
+	payload, ok := strings.CutPrefix(data, prefix)
 	if !ok {
 		return 0, false
 	}
@@ -614,7 +678,7 @@ func (p *MusicPlugin) editListPage(b bot.Bot, msgId message.QID, isGroup bool, s
 		return false
 	}
 	text := p.buildListText(sess, true)
-	rows := p.paginationRows(sess)
+	rows := p.keyboardRows(sess)
 	if isGroup {
 		gb := msgchain.Builder().Group().Text(text)
 		if len(rows) > 0 {
@@ -649,25 +713,51 @@ func sessionKey(msg message.Message) string {
 	return msg.Sender.UserId.String() + "|g:" + msg.GroupId.String()
 }
 
-// doPick 点播：默认下载音频以文件发送；card 模式发音乐卡片（失败降级为文件）；
-// text 模式只发播放链接。各环节失败自动降级，保证用户总能拿到可用的结果。
+// doPick 点播（文本指令）：默认下载音频以文件发送；card 模式发音乐卡片
+// （失败降级为文件）；text 模式只发播放链接。
 func (p *MusicPlugin) doPick(ctx context.Context, b bot.Bot, msg message.Message, isGroup bool, index int) {
 	sess, ok := p.currentSession(msg)
 	if !ok {
 		p.replyText(b, msg, isGroup, fmt.Sprintf("没有有效的选歌列表，先发 /点歌 关键词 搜索一下吧"))
 		return
 	}
+	chat := pickChat(msg)
+	p.deliverPick(ctx, b, isGroup, chat, sess.source, sessTrack(sess, index), func(text string) {
+		p.replyText(b, msg, isGroup, text)
+	}, msg.Sender.UserId)
+}
+
+// sessTrack 取列表中的序号曲目；越界返回 nil（deliverPick 会反馈提示）。
+func sessTrack(sess *searchSession, index int) *track {
 	if index < 1 || index > len(sess.tracks) {
-		p.replyText(b, msg, isGroup, fmt.Sprintf("序号超出范围（1~%d），看下列表再选吧", len(sess.tracks)))
+		return nil
+	}
+	return sess.tracks[index-1]
+}
+
+// pickChat 点播/歌词的发送目标：群聊为群 ID，私聊为发送者。
+func pickChat(msg message.Message) message.QID {
+	if msg.GroupId != "" {
+		return msg.GroupId
+	}
+	return msg.Sender.UserId
+}
+
+// deliverPick 点播投递（文本指令与序号按钮共用）：取播放链接后按 SendMode
+// 发卡片/文件/直链，各环节失败自动降级，保证用户总能拿到可用的结果。
+// reply 承接全部文本反馈（指令路径为 @ 引用回复，按钮路径为会话直发）；
+// user 仅用于日志标识发起者。
+func (p *MusicPlugin) deliverPick(ctx context.Context, b bot.Bot, isGroup bool, chat message.QID, source string, t *track, reply func(string), user message.QID) {
+	if t == nil {
+		reply("序号超出范围，看下列表再选吧")
 		return
 	}
-	t := sess.tracks[index-1]
 	sctx, cancel := context.WithTimeout(ctx, time.Duration(p.cfg.DownloadTimeoutSec+30)*time.Second)
 	defer cancel()
-	res, err := p.client.songURL(sctx, sess.source, t.ID.String(), p.cfg.Bitrate)
+	res, err := p.client.songURL(sctx, source, t.ID.String(), p.cfg.Bitrate)
 	if err != nil {
-		p.Logger.Warn("获取歌曲播放链接失败", "error", err, "track", t.Name, "id", t.ID.String(), "user", msg.Sender.UserId)
-		p.replyText(b, msg, isGroup, "获取播放链接失败："+err.Error())
+		p.Logger.Warn("获取歌曲播放链接失败", "error", err, "track", t.Name, "id", t.ID.String(), "user", user)
+		reply("获取播放链接失败：" + err.Error())
 		return
 	}
 	audio := res.URL.String()
@@ -685,13 +775,13 @@ func (p *MusicPlugin) doPick(ctx context.Context, b bot.Bot, msg message.Message
 
 	switch p.cfg.SendMode {
 	case "text":
-		p.sendSongLink(b, msg, isGroup, title, subtitle, audio)
-		p.Logger.Info("点歌完成", "track", title, "user", msg.Sender.UserId, "is_group", isGroup, "mode", "text")
+		p.sendSongLink(b, isGroup, chat, title, subtitle, audio)
+		p.Logger.Info("点歌完成", "track", title, "user", user, "is_group", isGroup, "mode", "text")
 		return
 	case "card":
-		cover := p.fetchCover(sctx, sess.source, t)
-		if p.sendCard(b, msg, isGroup, title, subtitle, audio, cover) {
-			p.Logger.Info("点歌完成", "track", title, "user", msg.Sender.UserId, "is_group", isGroup, "mode", "card")
+		cover := p.fetchCover(sctx, source, t)
+		if p.sendCard(b, isGroup, chat, title, subtitle, audio, cover) {
+			p.Logger.Info("点歌完成", "track", title, "user", user, "is_group", isGroup, "mode", "card")
 			return
 		}
 		// 卡片发送失败 → 降级为下载发文件
@@ -700,29 +790,29 @@ func (p *MusicPlugin) doPick(ctx context.Context, b bot.Bot, msg message.Message
 	// 文件路径（file 模式，或 card 模式降级）：超过上限直接给链接并说明原因。
 	limit := int64(p.cfg.MaxSizeMB) * 1024 * 1024
 	if limit > 0 && size > limit {
-		p.replyText(b, msg, isGroup, fmt.Sprintf("这首 %.1fMB，超过下载上限 %dMB（无损音质更大，可调大「下载上限」或降低音质），给你直链：\n🔗 %s",
+		reply(fmt.Sprintf("这首 %.1fMB，超过下载上限 %dMB（无损音质更大，可调大「下载上限」或降低音质），给你直链：\n🔗 %s",
 			float64(size)/1024/1024, p.cfg.MaxSizeMB, audio))
 		return
 	}
 	data, ctype, err := p.client.download(sctx, audio)
 	if err != nil {
-		p.Logger.Warn("音频下载失败，降级为链接", "error", err, "track", title, "user", msg.Sender.UserId)
-		p.replyText(b, msg, isGroup, "下载失败了："+err.Error()+"，给你直链：\n🔗 "+audio)
+		p.Logger.Warn("音频下载失败，降级为链接", "error", err, "track", title, "user", user)
+		reply("下载失败了：" + err.Error() + "，给你直链：\n🔗 " + audio)
 		return
 	}
 	if limit > 0 && int64(len(data)) > limit {
-		p.replyText(b, msg, isGroup, fmt.Sprintf("这首 %.1fMB，超过下载上限 %dMB（可调大「下载上限」或降低音质），给你直链：\n🔗 %s",
+		reply(fmt.Sprintf("这首 %.1fMB，超过下载上限 %dMB（可调大「下载上限」或降低音质），给你直链：\n🔗 %s",
 			float64(len(data))/1024/1024, p.cfg.MaxSizeMB, audio))
 		return
 	}
 	name := buildAudioName(t, ctype, res.BR.String())
-	if p.sendAudioFile(b, msg, isGroup, name, data) {
-		p.Logger.Info("点歌完成", "track", title, "user", msg.Sender.UserId, "is_group", isGroup, "mode", "file",
+	if p.sendAudioFile(b, isGroup, chat, name, data) {
+		p.Logger.Info("点歌完成", "track", title, "user", user, "is_group", isGroup, "mode", "file",
 			"size_mb", fmt.Sprintf("%.1f", float64(len(data))/1024/1024))
 		return
 	}
 	// 文件发送失败 → 最后兜底给链接
-	p.replyText(b, msg, isGroup, "文件发送失败，给你直链：\n🔗 "+audio)
+	reply("文件发送失败，给你直链：\n🔗 " + audio)
 }
 
 // buildAudioName 组装发送文件名：歌名 - 歌手.ext。
@@ -792,14 +882,14 @@ func (p *MusicPlugin) doLyric(ctx context.Context, b bot.Bot, msg message.Messag
 		p.replyText(b, msg, isGroup, "🎼 "+t.Name+" 歌词：\n"+text)
 		return
 	}
-	if msg.Platform == "qq" && p.sendLyricFile(b, msg, isGroup, t, text) {
+	if msg.Platform == "qq" && p.sendLyricFile(b, isGroup, pickChat(msg), t, text) {
 		return
 	}
 	p.replyText(b, msg, isGroup, fmt.Sprintf("🎼 %s 歌词（过长截断）：\n%s", t.Name, truncate(text, 1800)))
 }
 
 // sendLyricFile 歌词过长时以 .lrc 文件发送，发送失败返回 false 由调用方降级。
-func (p *MusicPlugin) sendLyricFile(b bot.Bot, msg message.Message, isGroup bool, t *track, text string) bool {
+func (p *MusicPlugin) sendLyricFile(b bot.Bot, isGroup bool, chat message.QID, t *track, text string) bool {
 	name := t.Name + ".lrc"
 	if a := t.artistLine(); a != "" {
 		name = t.Name + " - " + a + ".lrc"
@@ -807,44 +897,57 @@ func (p *MusicPlugin) sendLyricFile(b bot.Bot, msg message.Message, isGroup bool
 	b64 := base64.StdEncoding.EncodeToString([]byte(text))
 	var ok bool
 	if isGroup {
-		_, ok = b.SendGroupMsg(msg.GroupId, msgchain.Builder().Group().FileBase64(name, b64).Build())
+		_, ok = b.SendGroupMsg(chat, msgchain.Builder().Group().FileBase64(name, b64).Build())
 	} else {
-		_, ok = b.SendFriendMsg(msg.Sender.UserId, msgchain.Builder().Friend().FileBase64(name, b64).Build())
+		_, ok = b.SendFriendMsg(chat, msgchain.Builder().Friend().FileBase64(name, b64).Build())
 	}
 	if !ok {
-		p.Logger.Warn("歌词文件发送失败", "track", t.Name, "user", msg.Sender.UserId, "is_group", isGroup)
+		p.Logger.Warn("歌词文件发送失败", "track", t.Name, "chat", chat, "is_group", isGroup)
 	}
 	return ok
 }
 
 // sendCard 发 OneBot v11 自定义音乐卡片，发送失败返回 false 由调用方降级。
-func (p *MusicPlugin) sendCard(b bot.Bot, msg message.Message, isGroup bool, title, subtitle, audio, cover string) bool {
+func (p *MusicPlugin) sendCard(b bot.Bot, isGroup bool, chat message.QID, title, subtitle, audio, cover string) bool {
 	seg := musicCardSeg(title, subtitle, jumpURL, audio, cover)
 	var ok bool
 	if isGroup {
-		_, ok = b.SendGroupMsg(msg.GroupId, msgchain.Builder().Group().Raw(seg).Build())
+		_, ok = b.SendGroupMsg(chat, msgchain.Builder().Group().Raw(seg).Build())
 	} else {
-		_, ok = b.SendFriendMsg(msg.Sender.UserId, msgchain.Builder().Friend().Raw(seg).Build())
+		_, ok = b.SendFriendMsg(chat, msgchain.Builder().Friend().Raw(seg).Build())
 	}
 	if !ok {
-		p.Logger.Warn("音乐卡片发送失败，降级", "track", title, "user", msg.Sender.UserId, "is_group", isGroup)
+		p.Logger.Warn("音乐卡片发送失败，降级", "track", title, "chat", chat, "is_group", isGroup)
 	}
 	return ok
 }
 
 // sendAudioFile 把下载好的音频以文件发送（base64 直传），失败返回 false 由调用方兜底。
-func (p *MusicPlugin) sendAudioFile(b bot.Bot, msg message.Message, isGroup bool, name string, data []byte) bool {
+func (p *MusicPlugin) sendAudioFile(b bot.Bot, isGroup bool, chat message.QID, name string, data []byte) bool {
 	b64 := base64.StdEncoding.EncodeToString(data)
 	var ok bool
 	if isGroup {
-		_, ok = b.SendGroupMsg(msg.GroupId, msgchain.Builder().Group().FileBase64(name, b64).Build())
+		_, ok = b.SendGroupMsg(chat, msgchain.Builder().Group().FileBase64(name, b64).Build())
 	} else {
-		_, ok = b.SendFriendMsg(msg.Sender.UserId, msgchain.Builder().Friend().FileBase64(name, b64).Build())
+		_, ok = b.SendFriendMsg(chat, msgchain.Builder().Friend().FileBase64(name, b64).Build())
 	}
 	if !ok {
-		p.Logger.Warn("音频文件发送失败", "name", name, "size", len(data), "user", msg.Sender.UserId, "is_group", isGroup)
+		p.Logger.Warn("音频文件发送失败", "name", name, "size", len(data), "chat", chat, "is_group", isGroup)
 	}
 	return ok
+}
+
+// sendPlain 向会话直发文本（按钮路径的反馈：无 @、无引用）。
+func (p *MusicPlugin) sendPlain(b bot.Bot, isGroup bool, chat message.QID, text string) {
+	if isGroup {
+		if _, ok := b.SendGroupMsg(chat, msgchain.Builder().Group().Text(text).Build()); !ok {
+			p.Logger.Warn("群聊消息发送失败", "chat", chat)
+		}
+		return
+	}
+	if _, ok := b.SendFriendMsg(chat, msgchain.Builder().Friend().Text(text).Build()); !ok {
+		p.Logger.Warn("私聊消息发送失败", "chat", chat)
+	}
 }
 
 // musicCardSeg 构造 OneBot v11 自定义音乐卡片段（type=custom）。
@@ -863,14 +966,14 @@ func musicCardSeg(title, content, jump, audio, cover string) message.OB11Segment
 }
 
 // sendSongLink 文本降级：歌名 + 歌手 + 播放直链。
-func (p *MusicPlugin) sendSongLink(b bot.Bot, msg message.Message, isGroup bool, title, subtitle, audio string) {
+func (p *MusicPlugin) sendSongLink(b bot.Bot, isGroup bool, chat message.QID, title, subtitle, audio string) {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "🎵 %s\n", title)
 	if subtitle != "" {
 		fmt.Fprintf(&sb, "%s\n", subtitle)
 	}
 	fmt.Fprintf(&sb, "🔗 %s\n%s", audio, creditLine)
-	p.replyText(b, msg, isGroup, sb.String())
+	p.sendPlain(b, isGroup, chat, sb.String())
 }
 
 // replyText 回复文本（群聊带 @）。
@@ -899,7 +1002,7 @@ func helpText(sessionMin int) string {
 /点歌 选 序号     同上
 /点歌 歌词 序号   查看歌词
 /点歌 help        查看本帮助
-支持按钮的平台搜索结果可直接点击「上一页/下一页」按钮翻页
+支持按钮的平台可直接点序号下载、◀️▶️ 翻页，无需输指令
 %s，仅供个人学习，请勿商用`, sessionMin, creditLine)
 }
 

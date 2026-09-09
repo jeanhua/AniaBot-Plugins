@@ -2,6 +2,7 @@ package music
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -245,5 +246,59 @@ func TestHelpText(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Fatalf("帮助文本缺少 %q:\n%s", want, s)
 		}
+	}
+}
+
+// TestKeyboardRows 列表键盘：序号点播按钮每行 5 个（回调数据 pick:<序号>，
+// 带插件前缀），末行翻页按钮按页码出现。
+func TestKeyboardRows(t *testing.T) {
+	p := NewPlugin()
+	sess := &searchSession{keyword: "test", page: 2, tracks: make([]*track, 12)}
+	for i := range sess.tracks {
+		sess.tracks[i] = &track{Name: fmt.Sprintf("t%d", i+1)}
+	}
+	rows := p.keyboardRows(sess)
+	// 12 首 → 3 行序号（5+5+2）+ 1 行翻页
+	if len(rows) != 4 {
+		t.Fatalf("行数 = %d, want 4: %+v", len(rows), rows)
+	}
+	if len(rows[0]) != 5 || len(rows[2]) != 2 {
+		t.Fatalf("序号按钮布局不符: %+v", rows)
+	}
+	first := rows[0][0]
+	if first.Text != "1" || first.Data != "音乐点歌:pick:1" {
+		t.Fatalf("首个点播按钮不符: %+v", first)
+	}
+	last := rows[2][1]
+	if last.Text != "12" || last.Data != "音乐点歌:pick:12" {
+		t.Fatalf("末个点播按钮不符: %+v", last)
+	}
+	// 第 2 页：上一页 + 下一页
+	pg := rows[3]
+	if len(pg) != 2 || pg[0].Data != "音乐点歌:pg:1" || pg[1].Data != "音乐点歌:pg:3" {
+		t.Fatalf("翻页按钮不符: %+v", pg)
+	}
+
+	// 第 1 页短列表：只有序号行 + 下一页
+	sess1 := &searchSession{keyword: "test", page: 1, tracks: []*track{{Name: "a"}, {Name: "b"}}}
+	rows1 := p.keyboardRows(sess1)
+	if len(rows1) != 2 || len(rows1[0]) != 2 || len(rows1[1]) != 1 || rows1[1][0].Data != "音乐点歌:pg:2" {
+		t.Fatalf("第 1 页键盘不符: %+v", rows1)
+	}
+}
+
+// TestParsePickPayload 点播按钮载荷解析。
+func TestParsePickPayload(t *testing.T) {
+	if n, ok := parsePickPayload("pick:3"); !ok || n != 3 {
+		t.Fatalf("pick:3 → %d %v, want 3 true", n, ok)
+	}
+	if _, ok := parsePickPayload("pg:3"); ok {
+		t.Fatal("翻页载荷不应解析为点播")
+	}
+	if _, ok := parsePickPayload("pick:0"); ok {
+		t.Fatal("序号 0 不合法")
+	}
+	if _, ok := parsePickPayload("pick:x"); ok {
+		t.Fatal("非数字不合法")
 	}
 }
