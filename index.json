@@ -23,6 +23,33 @@
       "readme": "README.md"
     },
     {
+      "id": "checkin",
+      "name": "签到打卡",
+      "description": "每日签到赚积分：随机积分+今日运势、连续签到加成、积分查询与排行榜，数据持久化重启不丢",
+      "author": "jeanhua",
+      "version": "1.0.0",
+      "platforms": [
+        "qq",
+        "feishu",
+        "telegram",
+        "discord",
+        "qqofficial"
+      ],
+      "tags": [
+        "签到",
+        "积分",
+        "娱乐",
+        "群聊"
+      ],
+      "api_version": 1,
+      "min_framework": "4.6.0",
+      "entry": {
+        "constructor": "NewPlugin"
+      },
+      "icon": "",
+      "readme": "README.md"
+    },
+    {
       "id": "dicegirl",
       "name": "骰娘",
       "description": "TRPG 骰娘：支持骰子表达式 /r、COC 7e 技能检定 /ra、理智检定 /sc 与今日人品 /jrrp，可直接发 .r 等裸指令",
@@ -172,6 +199,33 @@
       "tags": [
         "娱乐",
         "音乐"
+      ],
+      "api_version": 1,
+      "min_framework": "4.6.0",
+      "entry": {
+        "constructor": "NewPlugin"
+      },
+      "icon": "",
+      "readme": "README.md"
+    },
+    {
+      "id": "pet",
+      "name": "电子宠物",
+      "description": "领养一只专属电子宠物：喂食、逗宠、看状态，饱食度与心情随时间衰减，互动涨成长值升级，还有随机趣味事件",
+      "author": "jeanhua",
+      "version": "1.0.0",
+      "platforms": [
+        "qq",
+        "feishu",
+        "telegram",
+        "discord",
+        "qqofficial"
+      ],
+      "tags": [
+        "宠物",
+        "养成",
+        "娱乐",
+        "互动"
       ],
       "api_version": 1,
       "min_framework": "4.6.0",
