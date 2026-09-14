@@ -69,31 +69,28 @@ func pickCandidate(candidates []partner) (partner, bool) {
 	return candidates[rand.Intn(len(candidates))], true
 }
 
-// filterCandidates 把历史消息发言者整理成去重候选：剔除发送者本人、机器人自己
-// 与今日已抽到的人；展示名取群名片，为空回退昵称。
-func filterCandidates(msgs []message.Message, self, sender message.QID, drawn map[string]bool) []partner {
+// filterCandidates 把群成员列表整理成去重候选：剔除发送者本人、机器人、
+// 机器人账号（IsRobot）与今日已抽到的人；展示名取群名片，为空回退昵称。
+func filterCandidates(members []message.GroupUserInfo, self, sender message.QID, drawn map[string]bool) []partner {
 	seen := make(map[string]bool)
-	out := make([]partner, 0)
-	add := func(qid message.QID, card, nick string) {
-		qq := qid.TrimQQPrefix()
+	out := make([]partner, 0, len(members))
+	for i := range members {
+		qq := members[i].UserID.TrimQQPrefix()
 		if qq == "" || seen[qq] {
-			return
+			continue
 		}
-		if qid == self || qid == sender || drawn[qq] {
-			return
+		if members[i].UserID == self || members[i].UserID == sender || members[i].IsRobot || drawn[qq] {
+			continue
 		}
 		seen[qq] = true
-		name := card
+		name := members[i].Card
 		if name == "" {
-			name = nick
+			name = members[i].Nickname
 		}
 		if name == "" {
 			name = "QQ" + qq
 		}
 		out = append(out, partner{QQ: qq, Name: name})
-	}
-	for i := range msgs {
-		add(msgs[i].Sender.UserId, msgs[i].Sender.Card, msgs[i].Sender.Nickname)
 	}
 	return out
 }

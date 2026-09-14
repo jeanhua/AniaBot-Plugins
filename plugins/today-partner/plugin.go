@@ -4,7 +4,7 @@
 //     每日抽取次数可配置（1-5）；次数大于 1 时，后面的抽取会带上之前抽到的一起展示；
 //   - /强娶 @群成员：直接指定今日对象，有时间冷却，冷却时长可配置。
 //
-// 候选成员来自最近的群消息发言者（框架未暴露群成员列表 API，以活跃群友近似）。
+// 候选成员经 bot.QQ 的 GetGroupMemberList（NapCat get_group_member_list）获取全量群成员。
 // 抽取与冷却状态写入持久化存储（命名空间 today-partner），重启不丢，跨天自动重置。
 package todaypartner
 
@@ -29,7 +29,6 @@ type todayPartnerConfig struct {
 	Enable               bool `cfg:"plugin.today-partner.enable" label:"启用今日对象" group:"今日对象" default:"true" help:"关闭后不响应任何命令"`
 	DailyDraws           int  `cfg:"plugin.today-partner.daily_draws" label:"每日抽取次数" group:"今日对象" default:"1" help:"每人每天可抽取的次数（1-5），大于 1 时后面的抽取会带上之前抽到的一起展示"`
 	MarryCooldownMinutes int  `cfg:"plugin.today-partner.marry_cooldown_minutes" label:"强娶冷却(分钟)" group:"今日对象" default:"60" help:"同一人两次强娶的最短间隔，0 为不限制"`
-	ScanMessages         int  `cfg:"plugin.today-partner.scan_messages" label:"成员扫描范围(条)" group:"今日对象" default:"100" help:"从最近多少条群消息里收集可抽取的群成员（10-500）"`
 }
 
 // marryState 强娶冷却记录。
@@ -53,7 +52,7 @@ func NewPlugin() *TodayPartnerPlugin {
 	p.AdminOnly = false
 	p.ShowFor = plugininfo.ShowForGroup
 	p.Author = "jeanhua"
-	p.Version = "1.0.0"
+	p.Version = "1.1.0"
 	p.Order = plugin.LevelNormal
 	p.Platforms = []string{"qq"}
 	return p
@@ -71,7 +70,6 @@ func (p *TodayPartnerPlugin) Start(ctx context.Context, cfg *viper.Viper) error 
 		"enable", p.cfg.Enable,
 		"daily_draws", clampDraws(p.cfg.DailyDraws),
 		"marry_cooldown_minutes", p.cfg.MarryCooldownMinutes,
-		"scan_messages", p.scanCount(),
 	)
 	return nil
 }
@@ -144,13 +142,17 @@ func (p *TodayPartnerPlugin) cmdDraw(ctx context.Context, b bot.Bot, cmdName str
 	p.sendDrawResult(b, msg.GroupId, kind, st.Partners, st.remaining(maxDraws), "")
 }
 
-// collectCandidates 从最近的群消息里收集可抽取的群成员。
+// collectCandidates 获取可抽取的群成员列表。
 func (p *TodayPartnerPlugin) collectCandidates(b bot.Bot, msg message.Message, drawn map[string]bool) []partner {
-	msgs, ok := b.GetGroupMsgHistory(msg.GroupId, p.scanCount(), 0)
-	if !ok || msgs == nil {
+	qb, ok := b.(bot.QQ)
+	if !ok {
 		return nil
 	}
-	return filterCandidates(*msgs, msg.SelfId, msg.Sender.UserId, drawn)
+	members, ok := qb.GetGroupMemberList(msg.GroupId, false)
+	if !ok || members == nil {
+		return nil
+	}
+	return filterCandidates(*members, msg.SelfId, msg.Sender.UserId, drawn)
 }
 
 // sendDrawResult 发送抽取结果：历次对象一起展示，每人一段昵称 + 头像。
@@ -233,21 +235,6 @@ func (p *TodayPartnerPlugin) resolveName(b bot.Bot, group, user message.QID) str
 }
 
 // ---------- 小工具 ----------
-
-// scanCount 成员扫描范围（含防御性默认值，限制在 10-500）。
-func (p *TodayPartnerPlugin) scanCount() int {
-	n := p.cfg.ScanMessages
-	if n <= 0 {
-		n = 100
-	}
-	if n < 10 {
-		n = 10
-	}
-	if n > 500 {
-		n = 500
-	}
-	return n
-}
 
 // replyText 短文本回复：群聊开头 @ 用户，失败记日志。
 func (p *TodayPartnerPlugin) replyText(b bot.Bot, group, user message.QID, text string) {

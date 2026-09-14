@@ -11,10 +11,9 @@ func seg(typ string, data map[string]any) message.OB11Segment {
 	return message.OB11Segment{Type: typ, Data: data}
 }
 
-func msgOf(sender message.QID, card, nick string) message.Message {
-	return message.Message{
-		Sender: message.MessageSender{UserId: sender, Card: card, Nickname: nick},
-	}
+// member 快速构造群成员。
+func member(uid message.QID, card, nick string) message.GroupUserInfo {
+	return message.GroupUserInfo{UserID: uid, Card: card, Nickname: nick}
 }
 
 func TestClampDraws(t *testing.T) {
@@ -61,17 +60,19 @@ func TestDrawStateEnsureTodayAndRemaining(t *testing.T) {
 func TestFilterCandidates(t *testing.T) {
 	self := message.FromUint64(100)
 	sender := message.FromUint64(200)
-	msgs := []message.Message{
-		msgOf(message.FromUint64(200), "发送者", "小发送"), // 自己 → 剔除
-		msgOf(self, "", "机器人"),                       // 机器人 → 剔除
-		msgOf(message.FromUint64(1), "群名片A", "昵称A"),  // 群名片优先
-		msgOf(message.FromUint64(2), "", "昵称B"),      // 无名片用昵称
-		msgOf(message.FromUint64(3), "", ""),         // 全空回退 QQ 号
-		msgOf(message.FromUint64(1), "又说话了", "昵称A"),  // 重复发言去重
-		msgOf(message.FromUint64(4), "", "已抽到"),      // 今日已抽到 → 剔除
+	robot := member(message.FromUint64(9), "", "小冰")
+	robot.IsRobot = true
+	members := []message.GroupUserInfo{
+		member(message.FromUint64(200), "发送者", "小发送"), // 自己 → 剔除
+		member(self, "", "机器人"),                       // 机器人 → 剔除
+		robot,                                         // 机器人账号 → 剔除
+		member(message.FromUint64(1), "群名片A", "昵称A"), // 群名片优先
+		member(message.FromUint64(2), "", "昵称B"),     // 无名片用昵称
+		member(message.FromUint64(3), "", ""),        // 全空回退 QQ 号
+		member(message.FromUint64(4), "", "已抽到"),     // 今日已抽到 → 剔除
 	}
 	drawn := map[string]bool{"4": true}
-	got := filterCandidates(msgs, self, sender, drawn)
+	got := filterCandidates(members, self, sender, drawn)
 	want := []partner{
 		{QQ: "1", Name: "群名片A"},
 		{QQ: "2", Name: "昵称B"},
@@ -89,7 +90,7 @@ func TestFilterCandidates(t *testing.T) {
 
 func TestFilterCandidatesExcludesEmptyQQ(t *testing.T) {
 	self := message.FromUint64(100)
-	got := filterCandidates([]message.Message{msgOf(message.QID(""), "", "无名")}, self, message.QID(""), nil)
+	got := filterCandidates([]message.GroupUserInfo{member(message.QID(""), "", "无名")}, self, message.QID(""), nil)
 	if len(got) != 0 {
 		t.Errorf("空 QQ 号应被剔除, 实际 %+v", got)
 	}
