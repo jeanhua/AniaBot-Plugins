@@ -23,12 +23,12 @@ func TestApplyDecay(t *testing.T) {
 	if pc.Hunger != 74 {
 		t.Errorf("hunger 期望 74，得到 %d", pc.Hunger)
 	}
-	if pc.Happy != 76 {
-		t.Errorf("happy 期望 76，得到 %d", pc.Happy)
+	if pc.Happy != 75 {
+		t.Errorf("happy 期望 75，得到 %d", pc.Happy)
 	}
 	// 时间倒流不应产生任何变化
 	applyDecay(&pc, 1000, 4, 3)
-	if pc.Hunger != 74 || pc.Happy != 76 {
+	if pc.Hunger != 74 || pc.Happy != 75 {
 		t.Errorf("时间倒流不应衰减： %+v", pc)
 	}
 	// 长时间衰减触底为 0
@@ -72,10 +72,10 @@ func TestMoodText(t *testing.T) {
 		hunger, happy int
 		want          string
 	}{
-		{5, 5, "又饿又无聊"},
-		{5, 80, "饿得瘪瘪的"},
-		{80, 5, "无聊透顶"},
-		{80, 80, "心情美美哒"},
+		{5, 5, "又饿又无聊，蔫得不行了…"},
+		{5, 80, "饿得瘪瘪的，快喂点吃的吧"},
+		{80, 5, "无聊透顶，快陪它玩玩吧"},
+		{80, 80, "吃饱喝足，心情美美哒"},
 		{40, 40, "平静地趴着发呆"},
 	}
 	for _, c := range cases {
