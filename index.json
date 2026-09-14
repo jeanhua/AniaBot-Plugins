@@ -356,7 +356,7 @@
         "抽签"
       ],
       "api_version": 1,
-      "min_framework": "4.8.0",
+      "min_framework": "4.7.4",
       "entry": {
         "constructor": "NewPlugin"
       },
