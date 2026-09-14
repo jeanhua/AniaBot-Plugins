@@ -35,7 +35,7 @@ index.json        # 聚合索引（由 scripts/build-index.sh 生成，CI 在合
 | [antiwithdrawal](plugins/antiwithdrawal) | 防撤回 | jeanhua | 1.0.0 | QQ 群防撤回：缓存每个群最近 100 条消息，/explore 以合并转发回顾最近 n 条，撤回的消息也能查看 |
 | [checkin](plugins/checkin) | 签到打卡 | jeanhua | 1.0.0 | 每日签到赚积分：随机积分+今日运势、连续签到加成、积分查询与排行榜，数据持久化重启不丢 |
 | [dicegirl](plugins/dicegirl) | 骰娘 | jeanhua | 1.0.0 | TRPG 骰娘：支持骰子表达式 /r、COC 7e 技能检定 /ra、理智检定 /sc 与今日人品 /jrrp，可直接发 .r 等裸指令 |
-| [eew](plugins/eew) | 地震预警与气象速报 | oldplum | 1.3.0 | 实时推送全国地震预警与速报，支持震中距与本地烈度估算、定时天气排行播报及 Cloudflare 自动降级 |
+| [eew](plugins/eew) | 地震预警与气象速报 | oldplum | 1.3.1 | 实时推送全国地震预警与速报，支持震中距与本地烈度估算、定时天气排行播报及 Cloudflare 自动降级 |
 | [games](plugins/games) | 群小游戏 | jeanhua | 1.0.0 | 群聊多人互动游戏合集：猜数字（自动缩范围）、24 点抢答（出题保证有解、表达式分数精确验算、胜场排行榜）、随机选择帮你做决定 |
 | [groupdigest](plugins/groupdigest) | 群刊 | jeanhua | 1.3.1 | 群消息达到阈值后自动用 AI 生成群刊，可发送 Markdown 文件或渲染图片 |
 | [ledger](plugins/ledger) | 群记账本 | jeanhua | 1.0.0 | 为每个群聊维护一本共享账本（私聊为个人账本）：/记账 记收支、/账单 看月度汇总、/流水 看明细、/删账 按流水号删除、/清账 清空本月，金额以分记账无浮点误差 |
